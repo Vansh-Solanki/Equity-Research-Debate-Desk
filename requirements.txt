@@ -1,0 +1,8 @@
+groq
+python-dotenv
+mcp
+requests
+yfinance
+feedparser
+beautifulsoup4
+lxml
