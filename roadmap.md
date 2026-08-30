@@ -18,7 +18,7 @@
 - Define both roles in CrewAI
 - Give each agent access to the MCP tools
 - Confirm each agent runs independent retrieval and writes an opening statement without seeing the other's
-- Status: **Not started**
+- Status: **Done** — `scripts/test_phase3_agents.py` runs Bull and Bear as two separate, non-shared `Crew` kickoffs; both produce opening statements citing >= 2 specific retrieved filing facts (manually spot-checked for AAPL and MSFT). Required patching around several crewai 1.15.18 + Groq free-tier issues — see progress.md.
 
 ## Phase 4 — Debate loop and Judge agent
 - Implement `speaking_order = [bull_agent, bear_agent]` and loop over it (fixed order for now, one-line change to randomize later)

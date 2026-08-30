@@ -1,4 +1,6 @@
 groq
+crewai
+litellm
 python-dotenv
 mcp
 requests

@@ -7,7 +7,7 @@ MCP clients expect):
 """
 
 from dotenv import load_dotenv
-from mcp.server.mcpserver import MCPServer
+from mcp.server.fastmcp import FastMCP
 
 from mcp_server.tools import get_filing as _get_filing
 from mcp_server.tools import get_news as _get_news
@@ -15,7 +15,7 @@ from mcp_server.tools import get_price as _get_price
 
 load_dotenv()
 
-mcp = MCPServer("equity-debate-desk")
+mcp = FastMCP("equity-debate-desk")
 
 
 @mcp.tool()
