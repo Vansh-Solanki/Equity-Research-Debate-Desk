@@ -21,9 +21,6 @@ MAX_PRICE_POINTS_FOR_AGENT = 5
 MAX_NEWS_SUMMARY_CHARS = 200
 
 
-_FILING_COVER_MARKER = "SECURITIES AND EXCHANGE COMMISSION"
-
-
 @tool("get_filing")
 def get_filing_tool(company: str, filing_type: str = "10-K") -> dict:
     """Fetch a company's most recent SEC filing of the given type. Returns
@@ -31,13 +28,10 @@ def get_filing_tool(company: str, filing_type: str = "10-K") -> dict:
     raw_text is truncated to the filing's opening section to fit free-tier LLM limits."""
     result = _get_filing(company, filing_type)
     if result.get("success") and result["data"].get("raw_text"):
-        raw_text = result["data"]["raw_text"]
-        # The stripped HTML starts with a long block of inline XBRL tag data (fund
-        # identifiers, GAAP taxonomy refs) with no prose in it — skip past that to
-        # the actual cover page so the truncated window contains real content.
-        start = raw_text.upper().find(_FILING_COVER_MARKER)
-        start = max(start, 0)
-        result["data"]["raw_text"] = raw_text[start : start + MAX_FILING_CHARS_FOR_AGENT]
+        # mcp_server/tools/get_filing.py's _strip_html already strips the non-rendered
+        # inline-XBRL tag-data block, so raw_text starts with real cover-page prose —
+        # a plain prefix truncation is enough here, no need to search past anything.
+        result["data"]["raw_text"] = result["data"]["raw_text"][:MAX_FILING_CHARS_FOR_AGENT]
     return result
 
 

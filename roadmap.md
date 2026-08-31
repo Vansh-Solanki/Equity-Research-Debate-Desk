@@ -24,14 +24,14 @@
 - Implement `speaking_order = [bull_agent, bear_agent]` and loop over it (fixed order for now, one-line change to randomize later)
 - Build 2–3 debate rounds where each agent reads the transcript and responds to the other's specific points
 - Build the Judge agent to read the full transcript and produce a scored verdict
-- Status: **Not started**
+- Status: **Done** — `orchestration/debate_loop.py` runs `speaking_order` through round 1 (independent openings) then rounds 2-3 (each side rebuts reading the full transcript), then `agents/judge_agent.py` scores it. `scripts/test_phase4_debate.py` produced a full 3-round AAPL transcript where every round-2+ statement explicitly names and rebuts the opponent's specific prior claim (e.g. "Bear's concern about... hinges on the 1.625% notes due 2025 and 2026. In reality...") — spot-checked, acceptance criterion met. Required several more crewai/Groq workarounds — see progress.md.
 
 ## Phase 5 — RAG index (Chroma)
 - Chunk filings with overlap
 - Generate embeddings locally via sentence-transformers
 - Store in ChromaDB with metadata (company, filing section, date) for later filtering
 - Add cross-encoder reranking on top of retrieval results
-- Status: **Not started**
+- Status: **Done** — `rag/` (chunker, embedder, chroma_store, reranker, retriever) chunks a filing with overlap (1000 chars / 200 overlap, word-boundary snapped), embeds locally via `all-MiniLM-L6-v2`, stores per-company in a persistent Chroma collection, and reranks candidates with `cross-encoder/ms-marco-MiniLM-L-6-v2`. `scripts/test_phase5_retrieval.py` scored 10/10 on both AAPL and MSFT (needs >= 8/10) — see progress.md for two real bugs this surfaced (a stale-duplicate-chunk indexing bug and a page-footer noise issue) and how they were fixed.
 
 ## Phase 6 — Claim-level evaluation pipeline (hallucination check)
 - Build claim extraction (LLM call breaking any agent's output into individual factual claims)

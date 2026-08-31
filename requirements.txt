@@ -8,3 +8,5 @@ yfinance
 feedparser
 beautifulsoup4
 lxml
+chromadb
+sentence-transformers

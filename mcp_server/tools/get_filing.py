@@ -72,9 +72,46 @@ def _strip_html(html: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
     for tag in soup(["script", "style"]):
         tag.decompose()
+
+    # Inline-XBRL filings carry a large block of non-rendered tagging metadata
+    # (duplicate/hidden facts, GAAP taxonomy references) ahead of the actual filing
+    # text — tens of thousands of characters of it. It's marked non-rendered via
+    # inline display:none styling (verified against real EDGAR filings: visible
+    # inline-tagged values like ix:nonfraction sit in normally-styled elements, only
+    # the ix:header block and its hidden-fact descendants carry display:none), so
+    # strip it structurally rather than skipping past it by character offset later.
+    for tag in soup.find_all(style=True):
+        # find_all() is computed once up front, so a tag can still show up in this
+        # list after an ancestor earlier in the loop was already decomposed — bs4
+        # sets a decomposed tag's whole subtree's .attrs to None, so guard against
+        # that (observed on RIOT's 10-K, which nests display:none spans inside
+        # display:none divs).
+        if tag.attrs is None:
+            continue
+        # Some filers' HTML also has a bare `style` attribute with no value — guard
+        # the .replace() call against that too.
+        style = (tag.attrs.get("style") or "").replace(" ", "").lower()
+        if "display:none" in style:
+            tag.decompose()
+    # Belt-and-suspenders: ix:header is always non-rendered tagging metadata, even
+    # on filings that don't wrap it in a display:none container.
+    for tag in soup.find_all("ix:header"):
+        tag.decompose()
+
     text = soup.get_text(separator=" ", strip=True)
     text = re.sub(r"\s+", " ", text)
     return text[:MAX_RAW_TEXT_CHARS]
+
+
+def _strip_page_footers(text: str, company_name: str) -> str:
+    """Some filing-agent HTML templates (observed on AAPL's 10-K, not universal —
+    MSFT's and TSLA's don't have this) repeat a "{Company Name}. | {Year} Form
+    {Type} | {Page}" footer on every rendered page, dozens of times per filing.
+    It carries no content and, worse, is generic enough across pages that it makes
+    otherwise-distinct chunks look similar to a retriever — strip it using the
+    filing's own resolved company name so this only ever matches real footers."""
+    pattern = re.escape(company_name) + r"\.?\s*\|\s*\d{4}\s*Form\s+[\w-]+\s*\|\s*\d+\b"
+    return re.sub(pattern, "", text)
 
 
 def get_filing(company: str, filing_type: str = "10-K") -> dict:
@@ -108,12 +145,14 @@ def get_filing(company: str, filing_type: str = "10-K") -> dict:
 
         doc_resp = session.get(doc_url, timeout=30)
         doc_resp.raise_for_status()
+        company_name = submissions.get("name", company)
         raw_text = _strip_html(doc_resp.text)
+        raw_text = _strip_page_footers(raw_text, company_name)
 
         return {
             "success": True,
             "data": {
-                "company": submissions.get("name", company),
+                "company": company_name,
                 "filing_type": filing_type,
                 "filed_date": filing_dates[match_idx],
                 "raw_text": raw_text,
