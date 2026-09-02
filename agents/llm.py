@@ -31,6 +31,15 @@ def build_groq_llm(temperature: float = 0.4, max_completion_tokens: int | None =
         api_key=api_key,
         temperature=temperature,
         max_completion_tokens=max_completion_tokens,
+        # GROQ_MODEL (openai/gpt-oss-20b) is a reasoning model that can spend its
+        # entire completion-token budget on hidden reasoning tokens before ever
+        # emitting the visible answer, leaving the response empty/truncated on
+        # longer or more complex tasks — found and root-caused in Phase 7 (see
+        # evaluation/claim_extractor.py's module docstring for the confirmed
+        # repro: 798/800 tokens spent reasoning, content=""). "low" reliably
+        # leaves most of the budget for the actual answer; likely also explains
+        # Phase 4's previously-unresolved Judge memo truncation.
+        reasoning_effort="low",
     )
 
 

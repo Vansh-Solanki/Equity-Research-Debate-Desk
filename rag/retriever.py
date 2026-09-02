@@ -40,13 +40,18 @@ def retrieve(
     company: str,
     top_k: int = DEFAULT_TOP_K,
     candidate_k: int = DEFAULT_CANDIDATE_K,
+    where: dict | None = None,
 ) -> list[dict]:
     """Retrieves the top_k chunks for `query` from `company`'s indexed filing:
     Chroma vector search narrows to candidate_k, then a cross-encoder reranks those
     down to top_k. Returns [] if nothing has been indexed for this company yet.
 
+    `where` is forwarded to Chroma's metadata filter (e.g. {"section": "Item 1A"})
+    — Phase 7's deep-dive spawner uses this to scope retrieval to one filing
+    section's chunks only.
+
     Each result dict has: id, text, metadata, distance (vector search), rerank_score.
     """
     query_embedding = embed_query(query)
-    candidates = query_collection(company, query_embedding, n_results=candidate_k)
+    candidates = query_collection(company, query_embedding, n_results=candidate_k, where=where)
     return rerank(query, candidates, top_k=top_k)

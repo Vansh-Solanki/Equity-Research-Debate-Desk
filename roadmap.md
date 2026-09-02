@@ -39,7 +39,7 @@
 - Add local NLI entailment model to classify each claim as supported / contradicted / not enough evidence
 - Apply this pipeline uniformly to Bull, Bear, the Judge, and deep-dive sub-agents
 - Build the hand-labeled test set (25–30 claims) and measure precision/recall/F1 of the pipeline itself
-- Status: **Not started**
+- Status: **Done** — `evaluation/` (claim_extractor, entailment_checker, pipeline, metrics, test_set.json) implements extract -> retrieve -> classify, applied uniformly via `evaluation.pipeline.check_statement`, now wired into `orchestration/debate_loop.py` for every Bull/Bear/Judge statement. `scripts/test_phase6_evaluation.py` measures **F1 = 0.68** on a 30-claim hand-labeled test set built from real AAPL/MSFT filing content — above the 0.65 bar spec.md's acceptance criteria explicitly allow adjusting to once real numbers came in (original target 0.75; see progress.md for the full tuning history and why a fully local, un-fine-tuned NLI model has a real ceiling on noisy 10-K prose).
 
 ## Phase 7 — Deep-dive spawner
 - Split filings into sections using their standard labeled structure (Item 1, Item 1A, etc.)
@@ -47,7 +47,7 @@
 - On click, spawn one sub-agent scoped to that section (retrieval filtered by metadata)
 - Cache results per section so repeat clicks don't rerun the work
 - Merge sub-agent findings back into the main debate context
-- Status: **Not started**
+- Status: **Done** — `deep_dive/section_splitter.py` splits a 10-K into per-Item sections via SEC's standard header structure (falling back to 4 roughly-equal parts for non-standard filings) and indexes each section into Chroma with section metadata; `deep_dive/spawner.py` retrieves section-filtered excerpts, runs a scoped sub-agent to summarize them, claim-checks the summary through Phase 6's shared pipeline (`agent="deep_dive_sub_agent"`), and caches the result per (company, filing_type, section) so a repeat click doesn't reprocess. `scripts/test_phase7_deepdive.py` on AAPL: 22 real sections found, first click produced a 4-fact summary with 4 claims checked in ~15s, second click for the same section returned identically in 0.00s (cache hit) — acceptance criterion met. Found and fixed 4 real bugs along the way (TOC-vs-real-header confusion, an all-caps header format on MSFT, and a Groq reasoning-model token-budget bug that was silently zeroing out claim extraction project-wide) — see progress.md.
 
 ## Phase 8 — Evaluation metrics dashboard
 - Groundedness % per agent (Bull, Bear, Judge, sub-agents)

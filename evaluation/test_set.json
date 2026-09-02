@@ -1,0 +1,182 @@
+[
+  {
+    "claim_id": "aapl-01",
+    "company": "AAPL",
+    "claim_text": "Apple's total net sales for fiscal 2025 were $416.161 billion, up 6% from fiscal 2024.",
+    "expected_label": "supported"
+  },
+  {
+    "claim_id": "aapl-02",
+    "company": "AAPL",
+    "claim_text": "Apple's iPhone net sales were $209.586 billion in fiscal 2025, a 4% increase over fiscal 2024.",
+    "expected_label": "supported"
+  },
+  {
+    "claim_id": "aapl-03",
+    "company": "AAPL",
+    "claim_text": "Apple's Services net sales grew 14% in fiscal 2025 to $109.158 billion.",
+    "expected_label": "supported"
+  },
+  {
+    "claim_id": "aapl-04",
+    "company": "AAPL",
+    "claim_text": "Apple's headquarters is located in Cupertino, California.",
+    "expected_label": "supported"
+  },
+  {
+    "claim_id": "aapl-05",
+    "company": "AAPL",
+    "claim_text": "Apple's fiscal year 2025 ended on September 27, 2025.",
+    "expected_label": "supported"
+  },
+  {
+    "claim_id": "aapl-06",
+    "company": "AAPL",
+    "claim_text": "The European Commission fined Apple 500 million euros in the Article 5(4) Digital Markets Act investigation.",
+    "expected_label": "supported"
+  },
+  {
+    "claim_id": "aapl-07",
+    "company": "AAPL",
+    "claim_text": "Ben Borders will become Apple's Senior Director of Corporate Accounting and Principal Accounting Officer, reporting to CFO Kevan Parekh.",
+    "expected_label": "supported"
+  },
+  {
+    "claim_id": "aapl-08",
+    "company": "AAPL",
+    "claim_text": "Apple's total term debt principal was $91.281 billion as of September 27, 2025, down from $97.341 billion a year earlier.",
+    "expected_label": "supported"
+  },
+  {
+    "claim_id": "aapl-09",
+    "company": "AAPL",
+    "claim_text": "Apple's total net sales declined in fiscal 2025 compared to fiscal 2024.",
+    "expected_label": "contradicted"
+  },
+  {
+    "claim_id": "aapl-10",
+    "company": "AAPL",
+    "claim_text": "Apple's iPhone net sales fell by 4% in fiscal 2025 compared to fiscal 2024.",
+    "expected_label": "contradicted"
+  },
+  {
+    "claim_id": "aapl-11",
+    "company": "AAPL",
+    "claim_text": "Apple's headquarters is located in Redmond, Washington.",
+    "expected_label": "contradicted"
+  },
+  {
+    "claim_id": "aapl-12",
+    "company": "AAPL",
+    "claim_text": "Apple's Mac net sales decreased 12% in fiscal 2025 compared to fiscal 2024.",
+    "expected_label": "contradicted"
+  },
+  {
+    "claim_id": "aapl-13",
+    "company": "AAPL",
+    "claim_text": "Apple's total term debt principal increased from fiscal 2024 to fiscal 2025.",
+    "expected_label": "contradicted"
+  },
+  {
+    "claim_id": "aapl-14",
+    "company": "AAPL",
+    "claim_text": "Apple's cloud gaming subscription service surpassed 50 million subscribers in fiscal 2025.",
+    "expected_label": "not_enough_evidence"
+  },
+  {
+    "claim_id": "aapl-15",
+    "company": "AAPL",
+    "claim_text": "Apple plans to open a new iPhone manufacturing plant in Vietnam in 2026.",
+    "expected_label": "not_enough_evidence"
+  },
+  {
+    "claim_id": "aapl-16",
+    "company": "AAPL",
+    "claim_text": "Apple's board approved a $110 billion increase to its share repurchase program in December 2025.",
+    "expected_label": "not_enough_evidence"
+  },
+  {
+    "claim_id": "msft-01",
+    "company": "MSFT",
+    "claim_text": "Microsoft's fiscal year 2026 ended on June 30, 2026.",
+    "expected_label": "supported"
+  },
+  {
+    "claim_id": "msft-02",
+    "company": "MSFT",
+    "claim_text": "Microsoft is headquartered at One Microsoft Way, Redmond, Washington.",
+    "expected_label": "supported"
+  },
+  {
+    "claim_id": "msft-03",
+    "company": "MSFT",
+    "claim_text": "Microsoft 365 Consumer cloud revenue grew 28% in fiscal 2026, with subscriber growth of 7%.",
+    "expected_label": "supported"
+  },
+  {
+    "claim_id": "msft-04",
+    "company": "MSFT",
+    "claim_text": "Microsoft's LinkedIn revenue increased $2.0 billion, or 11%, in fiscal 2026.",
+    "expected_label": "supported"
+  },
+  {
+    "claim_id": "msft-05",
+    "company": "MSFT",
+    "claim_text": "Microsoft's operating income increased $14.1 billion, or 20%, in fiscal 2026.",
+    "expected_label": "supported"
+  },
+  {
+    "claim_id": "msft-06",
+    "company": "MSFT",
+    "claim_text": "Microsoft's total revenue was $475.513 billion in fiscal 2026, with $300.354 billion coming from the United States.",
+    "expected_label": "supported"
+  },
+  {
+    "claim_id": "msft-07",
+    "company": "MSFT",
+    "claim_text": "Microsoft's Dynamics 365 revenue grew 18% in fiscal 2026 with growth across all workloads.",
+    "expected_label": "supported"
+  },
+  {
+    "claim_id": "msft-08",
+    "company": "MSFT",
+    "claim_text": "Microsoft's LinkedIn revenue declined 11% in fiscal 2026 compared to fiscal 2025.",
+    "expected_label": "contradicted"
+  },
+  {
+    "claim_id": "msft-09",
+    "company": "MSFT",
+    "claim_text": "Microsoft's operating income decreased $14.1 billion in fiscal 2026.",
+    "expected_label": "contradicted"
+  },
+  {
+    "claim_id": "msft-10",
+    "company": "MSFT",
+    "claim_text": "Microsoft is headquartered in Cupertino, California.",
+    "expected_label": "contradicted"
+  },
+  {
+    "claim_id": "msft-11",
+    "company": "MSFT",
+    "claim_text": "Microsoft's revenue from the United States was lower in fiscal 2026 than in fiscal 2025.",
+    "expected_label": "contradicted"
+  },
+  {
+    "claim_id": "msft-12",
+    "company": "MSFT",
+    "claim_text": "Microsoft's Xbox Game Pass subscriber count exceeded 200 million in fiscal 2026.",
+    "expected_label": "not_enough_evidence"
+  },
+  {
+    "claim_id": "msft-13",
+    "company": "MSFT",
+    "claim_text": "Microsoft announced a joint venture with OpenAI to build a $500 billion data center in Texas.",
+    "expected_label": "not_enough_evidence"
+  },
+  {
+    "claim_id": "msft-14",
+    "company": "MSFT",
+    "claim_text": "Microsoft CEO Satya Nadella received a 40% pay increase in fiscal 2026.",
+    "expected_label": "not_enough_evidence"
+  }
+]
