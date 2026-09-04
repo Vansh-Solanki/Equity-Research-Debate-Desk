@@ -22,62 +22,20 @@ naturally gravitate toward specific facts.
 
 Usage:
     python -m scripts.test_phase5_retrieval [COMPANY]
+
+Question sampling (sample_test_questions) has moved to evaluation/retrieval_metrics.py,
+shared with Phase 8's dashboard recall@k metric rather than duplicated.
 """
 
-import re
 import sys
 
 from dotenv import load_dotenv
 
-from rag.chroma_store import get_or_create_collection
+from evaluation.retrieval_metrics import sample_test_questions
 from rag.retriever import index_company_filing, retrieve
 
 DEFAULT_COMPANY = "AAPL"
 NUM_TEST_QUESTIONS = 10
-SNIPPET_WORDS = 20
-
-
-def _looks_distinctive(snippet: str) -> bool:
-    has_digit = bool(re.search(r"\d", snippet))
-    # Capitalized words after the first (proper nouns, defined terms) — not just
-    # ordinary sentence-initial capitalization.
-    words = snippet.split()
-    proper_nouns = sum(1 for w in words[1:] if w[:1].isupper())
-    return has_digit or proper_nouns >= 2
-
-
-def _sample_test_questions(company: str, n: int) -> list[dict]:
-    """Walks chunks spread across the indexed filing and turns a distinctive
-    sentence from partway through each into a "question" whose known-correct
-    chunk id we keep, skipping chunks whose sampled span is generic boilerplate."""
-    collection = get_or_create_collection(company)
-    all_chunks = collection.get(include=["documents"])
-    ids, docs = all_chunks["ids"], all_chunks["documents"]
-
-    # Only consider chunks with enough text to pull a distinctive mid-chunk sentence
-    # from (skips near-empty trailing chunks).
-    usable = [(i, d) for i, d in zip(ids, docs) if len(d) > 300]
-    if len(usable) < n:
-        raise RuntimeError(f"only {len(usable)} usable chunks indexed, need at least {n}")
-
-    # Split the filing into n buckets by position (preserving spread across the
-    # whole document) and, within each bucket, take the first chunk whose sampled
-    # span is distinctive rather than whatever chunk happens to land on the bucket
-    # boundary.
-    bucket_size = len(usable) // n
-    questions = []
-    for b in range(n):
-        bucket = usable[b * bucket_size : (b + 1) * bucket_size] or [usable[-1]]
-        for chunk_id, text in bucket:
-            words = re.split(r"\s+", text[100:].strip())
-            snippet = " ".join(words[:SNIPPET_WORDS])
-            if _looks_distinctive(snippet):
-                questions.append({"query": snippet, "expected_chunk_id": chunk_id})
-                break
-
-    if len(questions) < n:
-        raise RuntimeError(f"only found {len(questions)} distinctive candidate questions out of {n} buckets")
-    return questions
 
 
 def main() -> int:
@@ -93,7 +51,7 @@ def main() -> int:
         return 1
     print(f"Indexed {index_result['chunks_indexed']} chunks.\n")
 
-    questions = _sample_test_questions(company, NUM_TEST_QUESTIONS)
+    questions = sample_test_questions(company, NUM_TEST_QUESTIONS)
 
     passed = 0
     for i, q in enumerate(questions, start=1):

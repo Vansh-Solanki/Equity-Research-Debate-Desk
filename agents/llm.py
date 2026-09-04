@@ -8,6 +8,26 @@ import crewai.llms.cache as _crewai_cache
 from crewai import LLM
 from litellm.exceptions import BadRequestError, RateLimitError
 
+# Phase 8's latency/LLM-calls-per-debate metric needs a call count and timing
+# per logical step (one opening statement, one rebuttal, one verdict, one claim
+# extraction, one deep-dive summary) — run_with_rate_limit_backoff already wraps
+# every one of those (see each call site's `label=` argument), so it's the one
+# place that can record this without touching every agent's internals. Retries
+# are not logged separately: a label's count reflects successful logical calls,
+# not raw HTTP attempts.
+_CALL_LOG: list[dict] = []
+
+
+def reset_call_log() -> None:
+    """Clears the call log — call before a debate run you want to measure, since
+    the log is process-global and otherwise accumulates across runs."""
+    _CALL_LOG.clear()
+
+
+def get_call_log() -> list[dict]:
+    """Returns the call log so far: [{"label", "duration_seconds", "timestamp"}, ...]."""
+    return list(_CALL_LOG)
+
 # crewai 1.15.18's generic (litellm-fallback) LLM class stamps every message with
 # a "cache_breakpoint" field meant for prompt-caching providers (Anthropic, etc.)
 # but never strips it for providers accessed via the litellm fallback path. Groq's
@@ -53,7 +73,7 @@ _RETRY_AFTER_RE = re.compile(r"try again in (?:(\d+)m)?([\d.]+)s")
 MAX_SENSIBLE_WAIT_SECONDS = 90.0
 
 
-def run_with_rate_limit_backoff(fn, max_attempts: int = 6):
+def run_with_rate_limit_backoff(fn, max_attempts: int = 6, label: str = "unlabeled"):
     """Run `fn()`, retrying with backoff on a few observed Groq/crewai flakes:
 
     - RateLimitError: Groq's free-tier rate limit (per-minute or per-day token cap).
@@ -69,10 +89,17 @@ def run_with_rate_limit_backoff(fn, max_attempts: int = 6):
       (e.g. after forcing a final answer past max_iter, or on a no-tool agent it still
       sees tool schemas for). Groq validates this strictly and 400s instead of ignoring
       it; retrying resamples the completion and usually avoids the same attempt.
+
+    `label` identifies the logical call site (e.g. "bull_opening", "judge_verdict")
+    for Phase 8's evaluation.dashboard latency/call-count metric — recorded once per
+    successful call, not per retry attempt.
     """
+    start = time.time()
     for attempt in range(max_attempts):
         try:
-            return fn()
+            result = fn()
+            _CALL_LOG.append({"label": label, "duration_seconds": time.time() - start, "timestamp": start})
+            return result
         except RateLimitError as exc:
             match = _RETRY_AFTER_RE.search(str(exc))
             if match:

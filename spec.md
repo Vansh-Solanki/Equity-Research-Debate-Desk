@@ -28,8 +28,12 @@ equity-debate-desk/
 ├── evaluation/
 │   ├── claim_extractor.py
 │   ├── entailment_checker.py
-│   ├── metrics.py            # groundedness %, recall@k, latency tracking
-│   └── test_set.json         # hand-labeled 25-30 claims for Judge F1 validation
+│   ├── pipeline.py            # check_statement/check_claim: extraction -> retrieval -> entailment
+│   ├── metrics.py             # groundedness %, precision/recall/F1 scoring
+│   ├── retrieval_metrics.py   # recall@k, pre- vs post-rerank (Phase 8)
+│   ├── engagement_scorer.py   # LLM-as-judge debate engagement rubric (Phase 8)
+│   ├── dashboard.py           # Phase 8: assembles all six dashboard metrics
+│   └── test_set.json          # hand-labeled 25-30 claims for Judge F1 validation
 ├── deep_dive/
 │   ├── section_splitter.py
 │   └── spawner.py
@@ -44,7 +48,7 @@ equity-debate-desk/
 │   ├── worker.py               # pulls jobs from Redis, runs debate_loop
 │   └── queue_client.py
 ├── frontend/
-│   └── app.py                  # Streamlit UI
+│   └── app.py                  # Streamlit UI — talks directly to orchestration/deep_dive in-process (Phase 9)
 ├── logging/
 │   └── langfuse_client.py
 ├── tests/
@@ -168,11 +172,13 @@ All tools return a consistent shape: `{"success": bool, "data": ..., "error": st
 
 ## 6. Agent prompts (starting point — refine during Phase 3)
 
+**As of the post-Phase-7 RAG-wiring fix (see progress.md): Bull/Bear opening statements no longer call a tool themselves — retrieval is pre-fetched and injected into the task description as text (same pattern as `deep_dive/spawner.py`'s sub-agents), so the system prompts below were updated to match.**
+
 **Bull agent system prompt**
 ```
 You are an equity research analyst arguing the optimistic case for {company}.
-You have access to tools that retrieve the company's actual filing, price history, and recent news.
-Only make claims that are backed by retrieved evidence — never state a fact you have not retrieved.
+You will be given retrieved excerpts from the company's actual filing as evidence.
+Only make claims that are backed by that retrieved evidence — never state a fact you were not given.
 Build your strongest case for why this is a good investment.
 When responding to Bear's argument, directly address Bear's specific points before adding new ones.
 ```
@@ -180,8 +186,8 @@ When responding to Bear's argument, directly address Bear's specific points befo
 **Bear agent system prompt**
 ```
 You are an equity research analyst arguing the cautious case for {company}.
-You have access to tools that retrieve the company's actual filing, price history, and recent news.
-Only make claims that are backed by retrieved evidence — never state a fact you have not retrieved.
+You will be given retrieved excerpts from the company's actual filing as evidence.
+Only make claims that are backed by that retrieved evidence — never state a fact you were not given.
 Build your strongest case for why caution is warranted.
 When responding to Bull's argument, directly address Bull's specific points before adding new ones.
 ```

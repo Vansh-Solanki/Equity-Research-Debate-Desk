@@ -10,3 +10,4 @@ beautifulsoup4
 lxml
 chromadb
 sentence-transformers
+streamlit

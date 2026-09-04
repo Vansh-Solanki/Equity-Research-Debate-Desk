@@ -75,7 +75,7 @@ def extract_claims(agent_name: str, statement: str) -> list[dict]:
             messages=[{"role": "user", "content": _PROMPT.format(statement=statement)}],
         )
 
-    response = run_with_rate_limit_backoff(_call)
+    response = run_with_rate_limit_backoff(_call, label="claim_extraction")
     raw = response["choices"][0]["message"]["content"] or ""
 
     claims = []

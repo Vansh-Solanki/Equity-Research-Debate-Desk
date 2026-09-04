@@ -83,7 +83,7 @@ def _run_summary(company: str, section: str, excerpts: list[dict]) -> str:
         agent=agent,
     )
     crew = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False)
-    return str(run_with_rate_limit_backoff(crew.kickoff))
+    return str(run_with_rate_limit_backoff(crew.kickoff, label="deep_dive_summary"))
 
 
 def spawn_deep_dive(

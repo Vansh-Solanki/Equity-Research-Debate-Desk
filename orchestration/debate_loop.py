@@ -12,6 +12,14 @@ entailment check, since no agent is exempt or self-certifying. The Judge's own
 claims_checked/claims_unsupported counts (Phase 4: self-reported from its own
 reading of the transcript) are replaced with real measured counts from this
 pipeline, run over every Bull/Bear claim across the whole debate.
+
+Phase 9 needs the frontend to render each statement as it's produced ("updates
+live as a debate runs" — spec.md's acceptance criterion), not wait for the
+whole debate to finish. run_debate_stream() is the actual implementation, a
+generator yielding one event per step; run_debate() is a thin wrapper that
+drains it and returns the final DebateResult, unchanged from before this
+refactor — every existing caller (scripts/test_phase4/6/7/8_*.py) keeps working
+without modification.
 """
 
 import time
@@ -46,19 +54,18 @@ def _entry(round_num: int, agent_module, statement: str, company: str, claim_det
     }
 
 
-def run_debate(company: str, rounds: int = 3) -> dict:
-    """Runs a full debate for `company` and returns a dict matching spec.md's
-    DebateResult shape (deep_dive fields are left empty — Phase 7 populates those).
+def run_debate_stream(company: str, rounds: int = 3):
+    """Generator form of run_debate(): yields one event per step so a caller
+    (frontend/app.py) can render the debate as it happens, rather than blocking
+    until the whole thing finishes. Event shapes:
 
-    Round 1: each side in speaking_order writes an independent opening statement
-    (no visibility into the other's statement). Round 2+: each side reads the full
-    transcript so far and must respond to the opponent's specific prior points
-    before the Judge reads the finished transcript and produces a verdict.
+    {"type": "indexed", "chunks_indexed": int}
+    {"type": "statement", "entry": DebateTranscriptEntry}   -- once per turn
+    {"type": "verdict", "judge_verdict": dict}
+    {"type": "done", "result": DebateResult}                -- always the last event
 
-    Every statement (Bull, Bear, and the Judge's memo) is claim-checked via
-    evaluation.pipeline.check_statement — the full Claim records end up in the
-    returned dict's "claim_details" (keyed by claim_id; transcript entries and the
-    judge_verdict only carry claim_id references, per spec.md's schemas).
+    See run_debate()'s docstring for the debate structure itself; this function
+    contains the actual logic, run_debate() just drains this generator.
     """
     if rounds < 1:
         raise ValueError("rounds must be >= 1")
@@ -70,6 +77,7 @@ def run_debate(company: str, rounds: int = 3) -> dict:
     index_result = index_company_filing(company)
     if not index_result["success"]:
         raise RuntimeError(f"failed to index {company}'s filing for claim-checking: {index_result['error']}")
+    yield {"type": "indexed", "chunks_indexed": index_result["chunks_indexed"]}
 
     transcript: list[dict] = []
     claim_details: dict[str, dict] = {}
@@ -78,13 +86,17 @@ def run_debate(company: str, rounds: int = 3) -> dict:
         if transcript:
             time.sleep(INTER_TURN_PAUSE_SECONDS)
         statement = agent_module.run_opening_statement(company)
-        transcript.append(_entry(1, agent_module, statement, company, claim_details))
+        entry = _entry(1, agent_module, statement, company, claim_details)
+        transcript.append(entry)
+        yield {"type": "statement", "entry": entry}
 
     for round_num in range(2, rounds + 1):
         for agent_module in speaking_order:
             time.sleep(INTER_TURN_PAUSE_SECONDS)
             statement = agent_module.run_rebuttal(company, _format_transcript(transcript))
-            transcript.append(_entry(round_num, agent_module, statement, company, claim_details))
+            entry = _entry(round_num, agent_module, statement, company, claim_details)
+            transcript.append(entry)
+            yield {"type": "statement", "entry": entry}
 
     time.sleep(INTER_TURN_PAUSE_SECONDS)
     judge_verdict = judge_agent.run_verdict(company, _format_transcript(transcript))
@@ -104,11 +116,35 @@ def run_debate(company: str, rounds: int = 3) -> dict:
     judge_verdict["claims_unsupported"] = sum(
         1 for c in all_debate_claims if c["entailment_label"] != "supported"
     )
+    yield {"type": "verdict", "judge_verdict": judge_verdict}
 
-    return {
-        "transcript": transcript,
-        "judge_verdict": judge_verdict,
-        "claim_details": claim_details,
-        "deep_dive_available_sections": [],
-        "deep_dive_results": {},
+    yield {
+        "type": "done",
+        "result": {
+            "transcript": transcript,
+            "judge_verdict": judge_verdict,
+            "claim_details": claim_details,
+            "deep_dive_available_sections": [],
+            "deep_dive_results": {},
+        },
     }
+
+
+def run_debate(company: str, rounds: int = 3) -> dict:
+    """Runs a full debate for `company` and returns a dict matching spec.md's
+    DebateResult shape (deep_dive fields are left empty — Phase 7 populates those).
+
+    Round 1: each side in speaking_order writes an independent opening statement
+    (no visibility into the other's statement). Round 2+: each side reads the full
+    transcript so far and must respond to the opponent's specific prior points
+    before the Judge reads the finished transcript and produces a verdict.
+
+    Every statement (Bull, Bear, and the Judge's memo) is claim-checked via
+    evaluation.pipeline.check_statement — the full Claim records end up in the
+    returned dict's "claim_details" (keyed by claim_id; transcript entries and the
+    judge_verdict only carry claim_id references, per spec.md's schemas).
+    """
+    for event in run_debate_stream(company, rounds):
+        if event["type"] == "done":
+            return event["result"]
+    raise AssertionError("unreachable — run_debate_stream always yields a done event")

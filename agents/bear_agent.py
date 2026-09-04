@@ -5,9 +5,32 @@ from crewai import Agent, Crew, Process, Task
 from agents.llm import build_groq_llm, run_with_rate_limit_backoff
 from agents.prompts import BEAR_SYSTEM_PROMPT
 from agents.tools import ALL_TOOLS
+from rag.retriever import retrieve
 
 # Used to label every transcript entry/log line — never by position ("speaker 1").
 AGENT_NAME = "bear"
+
+MAX_CHUNKS_PER_QUERY = 3
+
+# Role-relevant queries: Bear digs for risk signal.
+BEAR_OPENING_QUERIES = [
+    "risk factors and potential challenges",
+    "declining metrics or negative trends",
+]
+
+
+def _build_retrieved_context(company: str, queries: list[str]) -> str:
+    """Pre-fetches role-relevant excerpts via Phase 5's RAG retriever, formatted for
+    the task description. retrieve() returns [] gracefully if nothing's indexed yet
+    (debate_loop.run_debate() indexes the filing before any agent runs), or if a
+    query just doesn't match anything — returns "" in either case so the caller can
+    branch the task instruction instead of citing facts that don't exist."""
+    blocks = []
+    for query in queries:
+        for r in retrieve(query, company, top_k=MAX_CHUNKS_PER_QUERY):
+            section = r["metadata"].get("section") or "filing"
+            blocks.append(f"[{section}] {r['text']}")
+    return "\n\n".join(blocks) if blocks else ""
 
 
 def build_bear_agent(company: str) -> Agent:
@@ -36,20 +59,41 @@ def run_opening_statement(company: str) -> str:
     Independent: takes no Bull transcript, so this cannot see or reference Bull's output.
     """
     agent = build_bear_agent(company)
-    task = Task(
-        description=(
-            f"Call get_filing for {company} exactly once (do not call get_price or get_news — "
-            f"the free-tier token budget is tight) and write an opening statement making the case "
-            f"for caution, citing at least 2 specific facts from the filing you retrieved."
-        ),
-        expected_output=(
+    context = _build_retrieved_context(company, BEAR_OPENING_QUERIES)
+
+    if context:
+        description = (
+            f"Below are retrieved excerpts from {company}'s actual SEC filing — do not "
+            f"call any tools, everything you need is here:\n\n{context}\n\n"
+            f"Write an opening statement making the case for caution for {company}, citing "
+            f"at least 2 specific facts from the excerpts above."
+        )
+        expected_output = (
             "A 3-6 sentence opening statement making the cautious case for the company, "
-            "referencing at least 2 specific retrieved facts (e.g. filing language, price trend, news event)."
-        ),
+            "referencing at least 2 specific retrieved facts."
+        )
+    else:
+        # retrieve() came back empty for every query — nothing indexed, or nothing
+        # matched. Don't ask for citations that can't exist; say so plainly instead
+        # of inviting the model to invent facts to satisfy the instruction.
+        description = (
+            f"No retrieved filing excerpts were available for {company} (the index may be "
+            f"empty or nothing matched). Do not call any tools. State plainly that you could "
+            f"not retrieve supporting evidence for {company}, and do not assert any specific "
+            f"facts, figures, or claims about the company."
+        )
+        expected_output = (
+            "A short statement explicitly noting that no retrieved evidence was available, "
+            "with no specific factual claims about the company."
+        )
+
+    task = Task(
+        description=description,
+        expected_output=expected_output,
         agent=agent,
     )
     crew = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False)
-    return str(run_with_rate_limit_backoff(crew.kickoff))
+    return str(run_with_rate_limit_backoff(crew.kickoff, label="bear_opening"))
 
 
 def run_rebuttal(company: str, transcript_text: str) -> str:
@@ -75,4 +119,4 @@ def run_rebuttal(company: str, transcript_text: str) -> str:
         agent=agent,
     )
     crew = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False)
-    return str(run_with_rate_limit_backoff(crew.kickoff))
+    return str(run_with_rate_limit_backoff(crew.kickoff, label="bear_rebuttal"))

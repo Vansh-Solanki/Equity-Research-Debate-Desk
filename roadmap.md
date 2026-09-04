@@ -56,11 +56,11 @@
 - Retrieval recall@k (before vs after reranking)
 - Latency / LLM calls per debate (and how deep-dive scales it)
 - Deep-dive lift (groundedness before vs after a targeted deep dive)
-- Status: **Not started**
+- Status: **Done** — `evaluation/dashboard.py` assembles all six metrics from modules each already built for an earlier phase (only debate engagement scoring, `evaluation/engagement_scorer.py`, is new — nothing scored that before). `agents/llm.py` gained a process-global call log so latency/call-count can be measured around a debate run without instrumenting every agent. `scripts/test_phase8_dashboard.py` on AAPL: a real 3-round debate + a deep-dive spawn produced all six numbers in one run (206.8s, 14 LLM calls) — acceptance criterion met. See progress.md for the actual measured numbers and one open discrepancy (Judge-accuracy F1 measured 0.62 here vs Phase 6's originally-recorded 0.68 on the same test set).
 
 ## Phase 9 — Frontend
 - Build the Streamlit UI: ticker input, live debate feed (Bull/Bear message bubbles), deep-dive buttons per section, final memo card with verdict and fact-check count
-- Status: **Not started**
+- Status: **Done** — `frontend/app.py` talks directly to `orchestration.debate_loop` and `deep_dive.spawner` in-process (no FastAPI/Redis/worker yet — that's Phase 10). Ticker input + "Run debate" button; live feed rendered via `st.chat_message` bubbles (🐂/🐻/⚖️ avatars) as each turn completes, using a new `run_debate_stream()` generator (`orchestration/debate_loop.py`) rather than waiting for the whole debate to return; one button per filing section (from `deep_dive.spawner.get_available_sections`) spawning a scoped summary on click; a memo card showing `stronger_side`, the memo, and a supported/checked fact-check count. Verified the app boots cleanly (`streamlit run frontend/app.py`, headless smoke test returned HTTP 200 with no import/path errors) — **not yet verified interactively in a browser** (clicking "Run debate" and a deep-dive button end to end); see progress.md for what that would need.
 
 ## Phase 10 — Deployment
 - Wrap frontend + backend + worker into a Docker container
