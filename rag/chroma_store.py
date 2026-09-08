@@ -32,20 +32,25 @@ def get_or_create_collection(company: str):
     return _get_client().get_or_create_collection(name=_collection_name(company))
 
 
-def delete_filing_chunks(company: str, filing_type: str, section: str = "") -> None:
-    """Deletes all previously-indexed chunks for this (company, filing_type, section).
+def delete_filing_chunks(company: str, filing_type: str, section: str | None = "") -> None:
+    """Deletes all previously-indexed chunks for this (company, filing_type), scoped
+    to one `section` (default "", the pre-Phase-5-rework main index's blank label),
+    or every section when `section` is None — needed since the main index now
+    section-splits the filing itself (rag.chunker.chunk_filing), so a re-index's
+    section labels/boundaries can differ run to run and old labels have no fixed
+    correspondence to new ones to delete individually.
 
     chunk ids are deterministic (rag.chunker.chunk_filing), so upsert alone handles
-    re-indexing an unchanged filing correctly — but if the chunk count changes
-    between indexing runs (e.g. a text-cleaning fix shortens the filing), upsert
-    only overwrites ids that still exist; the tail end of the old, longer chunk set
-    would otherwise stay behind as orphaned rows. Call this before upsert_chunks for
-    a clean re-index.
+    re-indexing an unchanged filing correctly — but if the chunk count or section
+    layout changes between indexing runs, upsert only overwrites ids that still
+    exist; the old chunk set's tail (or now-renamed sections) would otherwise stay
+    behind as orphaned rows. Call this before upsert_chunks for a clean re-index.
     """
     collection = get_or_create_collection(company)
     if collection.count() == 0:
         return
-    collection.delete(where={"$and": [{"filing_type": filing_type}, {"section": section}]})
+    where = {"filing_type": filing_type} if section is None else {"$and": [{"filing_type": filing_type}, {"section": section}]}
+    collection.delete(where=where)
 
 
 def upsert_chunks(company: str, chunks: list[dict], embeddings: list[list[float]]) -> int:

@@ -59,7 +59,7 @@ fix.
 import re
 
 from mcp_server.tools import get_filing as _get_filing
-from rag.chroma_store import delete_filing_chunks, upsert_chunks
+from rag.chroma_store import delete_filing_chunks, get_or_create_collection, upsert_chunks
 from rag.chunker import chunk_filing
 from rag.embedder import embed_texts
 
@@ -155,11 +155,34 @@ def _find_section_headers(text: str) -> list[tuple[int, str]]:
     return sorted(deduped, key=lambda pair: pair[0])
 
 
+# Matches a real sentence end (period/!/?) followed by whitespace and an
+# uppercase letter/digit/quote — same shape as rag/chunker.py's
+# _SENTENCE_SPLIT_RE. A plain `text.rfind(". ", ...)` originally snapped this
+# window boundary, which doesn't distinguish a real sentence end from ". "
+# inside an abbreviation ("Apple Inc. designs...", "the U.S. dollar...") —
+# confirmed it could snap a part boundary right after "Inc." and hand
+# rag.chunker.chunk_text() a fallback "section" that starts mid-sentence
+# ("designs and sells products..."), the exact mid-sentence-boundary bug this
+# whole two-level chunking scheme exists to prevent. Only reachable when a
+# filing has fewer than MIN_STANDARD_HEADERS real Item headers (this fallback
+# path), but now that rag.chunker.chunk_filing() calls split_sections() for
+# every main-index filing too, not just deep-dive's optional path, a
+# non-standard filing would have hit this silently.
+_SENTENCE_BOUNDARY_RE = re.compile(r'[.!?]\s+(?=[A-Z0-9"‘“])')
+
+
+def _last_sentence_boundary(text: str, start: int, end: int) -> int | None:
+    """Returns the position right after the last real sentence-ending
+    punctuation within text[start:end], or None if none is found."""
+    matches = list(_SENTENCE_BOUNDARY_RE.finditer(text, start, end))
+    return matches[-1].start() + 1 if matches else None
+
+
 def _fallback_split(text: str) -> list[dict]:
     """No paragraph breaks survive get_filing's whitespace collapsing (see module
     docstring), so this splits into FALLBACK_PARTS roughly equal character-length
-    windows, snapped to the nearest sentence boundary so a part doesn't start or
-    end mid-sentence."""
+    windows, snapped to the nearest real sentence boundary (_last_sentence_boundary)
+    so a part doesn't start or end mid-sentence."""
     text = text.strip()
     if not text:
         return []
@@ -172,9 +195,9 @@ def _fallback_split(text: str) -> list[dict]:
             break
         end = start + part_size if i < FALLBACK_PARTS - 1 else len(text)
         if end < len(text):
-            snap = text.rfind(". ", start, end)
-            if snap > start:
-                end = snap + 1
+            snap = _last_sentence_boundary(text, start, end)
+            if snap is not None and snap > start:
+                end = snap
         part_text = text[start:end].strip()
         if part_text:
             sections.append({"section": f"Part {i + 1}", "text": part_text})
@@ -204,17 +227,37 @@ def split_sections(raw_text: str) -> list[dict]:
     return sections
 
 
+def _indexed_section_labels(company: str, filing_type: str) -> set[str]:
+    """Real (non-blank) section labels already indexed in `company`'s collection
+    for `filing_type` — used by index_filing_sections to skip redundant
+    re-embedding when rag.retriever.index_company_filing already covered them."""
+    collection = get_or_create_collection(company)
+    if collection.count() == 0:
+        return set()
+    existing = collection.get(where={"filing_type": filing_type}, include=["metadatas"])
+    return {m["section"] for m in existing["metadatas"] if m.get("section")}
+
+
 def index_filing_sections(company: str, filing_type: str = "10-K") -> dict:
     """Fetches `company`'s filing, splits it into sections (split_sections), and
     chunks + indexes each section separately in Chroma with metadata["section"]
     set to that section's label — reusing rag.chunker.chunk_filing's existing
-    (until now unused) `section` parameter, so rag.retriever.retrieve(...,
-    where={"section": label}) can later scope retrieval to one section only.
+    `section` parameter, so rag.retriever.retrieve(..., where={"section": label})
+    can later scope retrieval to one section only.
 
     This indexes into the same per-company collection rag.retriever.index_company_filing
-    uses for the whole filing (section="" there) — the two coexist without
-    clobbering each other since chroma_store.delete_filing_chunks scopes deletes
-    to (filing_type, section).
+    uses for the whole filing — the two coexist without clobbering each other
+    since chroma_store.delete_filing_chunks scopes deletes to (filing_type, section).
+
+    rag.chunker.chunk_filing(section=None) now section-splits internally too (see
+    rag/chunker.py's Phase 5 rework), so index_company_filing already produces
+    byte-identical chunks (same ids, same text) for every real section — calling
+    this function after a debate has already indexed the filing would otherwise
+    re-fetch, re-chunk, and re-embed the entire filing a second time for rows
+    that upsert would just overwrite with identical content. If every section
+    this filing actually has is already indexed, skip the chunk/embed/upsert
+    work entirely and just return the (still freshly split, so still correctly
+    ordered) label list.
 
     Returns {"success": bool, "sections": [str, ...], "error": str | None} — the
     section labels list is what Phase 9's UI generates one deep-dive button per.
@@ -227,6 +270,10 @@ def index_filing_sections(company: str, filing_type: str = "10-K") -> dict:
     sections = split_sections(filing_data["raw_text"])
     if not sections:
         return {"success": False, "sections": [], "error": "filing produced no sections"}
+
+    all_labels = [s["section"] for s in sections]
+    if set(all_labels) <= _indexed_section_labels(company, filing_type):
+        return {"success": True, "sections": all_labels, "error": None}
 
     labels = []
     for section in sections:

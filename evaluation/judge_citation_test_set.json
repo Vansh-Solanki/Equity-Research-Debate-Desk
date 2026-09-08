@@ -1,0 +1,168 @@
+{
+  "_readme": "Hand-labeled test set for validating evaluation/judge_faithfulness.py's Layer 2 (check_citations), same purpose as evaluation/test_set.json validates the Phase 6 entailment pipeline. Each entry pairs a real Judge memo sentence (pulled from an actual debate run) with the all_debate_claims list from that same run, plus a hand-assigned correct_verdict. Labeling convention (resolved -- see evaluation/judge_faithfulness.py's STATUS_EQUIVALENCE and progress.md's Sept 8 write-up): the Judge's own prompt (agents/judge_agent.py's claims_block, 'X came back unsupported or lacking enough evidence') already treats 'unsupported' as covering both not_enough_evidence and contradicted -- so a memo sentence saying a claim was 'unsupported' counts as accurate against either underlying label, not just contradicted. A sentence naming the specific label (e.g. 'contradicted') must match that label exactly.",
+  "entries": [
+    {
+      "id": "aapl-run1-001",
+      "memo_sentence": "The Bull's case is better supported: it cites factual data from the filing — net sales and operating expenses both rose 8%, R&D spend grew 10% to $34.6 billion, and Greater China sales fell 8% in 2023 — all corroborated by the excerpt.",
+      "all_debate_claims": [
+        {
+          "claim_id": "bull-101",
+          "agent": "bull",
+          "text": "Apple's net sales and operating expenses both rose 8% in fiscal 2023.",
+          "entailment_label": "supported",
+          "confidence": 0.95
+        },
+        {
+          "claim_id": "bull-102",
+          "agent": "bull",
+          "text": "Apple's Greater China sales fell 8% in fiscal 2023.",
+          "entailment_label": "supported",
+          "confidence": 0.9
+        }
+      ],
+      "correct_verdict": "accurate",
+      "note": "Real memo text from progress.md's Phase 4 write-up (post-Judge-entailment-wiring fix). Multiple facts folded into one sentence -- exercises the case where extract_citation_details should pick out at least one matchable topic/status pair, not necessarily every clause."
+    },
+    {
+      "id": "aapl-run1-002",
+      "memo_sentence": "The Bear's arguments rely on interpretation or unverified claims, such as 'disciplined scaling without margin erosion' and a 2025 Greater China decline of 8%, which are not substantiated by the filing.",
+      "all_debate_claims": [
+        {
+          "claim_id": "bear-201",
+          "agent": "bear",
+          "text": "Apple's Greater China sales declined 8% in fiscal 2025.",
+          "entailment_label": "not_enough_evidence",
+          "confidence": 0.85
+        }
+      ],
+      "correct_verdict": "accurate",
+      "note": "'not substantiated' should map to the unsupported bucket (not_enough_evidence counts), so this is accurate against the real not_enough_evidence label."
+    },
+    {
+      "id": "aapl-run2-003",
+      "memo_sentence": "The Bull side hinges on an 18% EPS lift and a 66% liquid deferred-revenue buffer, but each of those claims was flagged as unsupported.",
+      "all_debate_claims": [
+        {
+          "claim_id": "bull-301",
+          "agent": "bull",
+          "text": "Apple's diluted EPS grew 18% in fiscal 2025.",
+          "entailment_label": "contradicted",
+          "confidence": 0.7
+        },
+        {
+          "claim_id": "bull-302",
+          "agent": "bull",
+          "text": "Apple maintains a 66% liquid deferred-revenue buffer against near-term obligations.",
+          "entailment_label": "not_enough_evidence",
+          "confidence": 0.62
+        }
+      ],
+      "correct_verdict": "ambiguous",
+      "note": "Relabeled after real tuning runs (see scripts/test_judge_citation_accuracy.py): same sentence used in scripts/diagnose_judge_claims.py's EXAMPLE_MEMO, and a genuine two-topic-in-one-sentence case (EPS lift AND deferred-revenue buffer). extract_citation_details only pulls one topic per sentence, and the embedded topic sits ambiguously close to both bull-301 and bull-302 -- correctly landing in the ambiguous bucket rather than confidently picking one. Originally hand-labeled 'accurate' on the theory that either match would resolve to the same accuracy verdict, but that conflates two different questions this checker deliberately keeps separate: whether the citation is *correct* vs. whether it's *precise* about which claim it means. A Judge citing two facts in one breath without distinguishing them is imprecise regardless of whether both happen to check out -- ambiguous is the honest answer, not a bug."
+    },
+    {
+      "id": "aapl-run3-004b",
+      "memo_sentence": "The Bull emphasized Apple's 2025 net income of $112 billion, but that figure is unsupported by the filing.",
+      "all_debate_claims": [
+        {
+          "claim_id": "bull-401",
+          "agent": "bull",
+          "text": "Apple's fiscal 2025 net income was $112 billion.",
+          "entailment_label": "supported",
+          "confidence": 0.93
+        }
+      ],
+      "correct_verdict": "wrong_status",
+      "note": "Single-topic version of aapl-run3-004 below, isolating just the net-income citation (the part of the original compound sentence that was genuinely mislabeled by the Judge -- the real claim is supported, but the memo called it unsupported). This is what a clean wrong_status case looks like once the multi-topic ambiguity is factored out; see aapl-run3-004's note for why the original two-topic sentence tests something different (imprecision, not incorrectness)."
+    },
+    {
+      "id": "aapl-run3-004",
+      "memo_sentence": "The Bull emphasized Apple's 2025 net income of $112 billion and diluted EPS of $7.46, but both figures are unsupported by the filing (the actual net income is $112.01 billion, but the 22% EPS growth claim lacks evidence).",
+      "all_debate_claims": [
+        {
+          "claim_id": "bull-401",
+          "agent": "bull",
+          "text": "Apple's fiscal 2025 net income was $112 billion.",
+          "entailment_label": "supported",
+          "confidence": 0.93
+        },
+        {
+          "claim_id": "bull-402",
+          "agent": "bull",
+          "text": "Apple's diluted EPS grew 22% in fiscal 2025.",
+          "entailment_label": "not_enough_evidence",
+          "confidence": 0.8
+        }
+      ],
+      "correct_verdict": "ambiguous",
+      "note": "Relabeled after real tuning runs (see scripts/test_judge_citation_accuracy.py) and aapl-run3-004b above. Real memo text from a live 2026-09-08 run, compounding two topics (net income AND EPS) into one sentence -- the net-income half is a real wrong_status case (memo says unsupported, real label is supported) but the EPS half is genuinely accurate (memo says unsupported, real label is not_enough_evidence, which the resolved convention treats as equivalent). Since the two topics would produce DIFFERENT verdicts and extract_citation_details only pulls one topic, the honest answer this checker should give for the compound sentence as written is 'can't confidently resolve to one verdict' -- ambiguous, not a guess at either one. Originally hand-labeled wrong_status by only reading the first half of the sentence; that was a labeling mistake, not a description of what a single-topic extractor can be expected to do with this input. This is the exact 'multi-fact sentence' limitation Phase 6 documented for evaluation/claim_extractor.py (see progress.md), showing up again one layer up in the citation checker."
+    },
+    {
+      "id": "aapl-run3-005",
+      "memo_sentence": "The Bull also cites a 66% deferred-revenue realization rate and a lower effective tax rate, both of which are directly supported.",
+      "all_debate_claims": [
+        {
+          "claim_id": "bull-403",
+          "agent": "bull",
+          "text": "Apple's deferred-revenue realization rate was 66%.",
+          "entailment_label": "supported",
+          "confidence": 0.97
+        }
+      ],
+      "correct_verdict": "accurate",
+      "note": "Real memo text, same run as aapl-run3-004 -- pairs with it to show the same memo can have both an accurate and a wrong_status citation in different sentences, which is why check_citations scores per-sentence, not per-memo."
+    },
+    {
+      "id": "aapl-run3-006",
+      "memo_sentence": "The Bear highlights Apple's warning about volatility in net sales and gross margins and a 7% decline in Greater China sales, yet these claims are not substantiated in the filing.",
+      "all_debate_claims": [
+        {
+          "claim_id": "bear-501",
+          "agent": "bear",
+          "text": "Apple's Greater China sales declined 7% year over year.",
+          "entailment_label": "contradicted",
+          "confidence": 0.88
+        }
+      ],
+      "correct_verdict": "accurate",
+      "note": "'not substantiated' against a real contradicted label -- still accurate under the resolved unsupported-covers-both convention."
+    },
+    {
+      "id": "synthetic-007-fabricated",
+      "memo_sentence": "Bull's claim about a $500 billion joint venture with OpenAI was flagged as unsupported.",
+      "all_debate_claims": [
+        {
+          "claim_id": "bull-601",
+          "agent": "bull",
+          "text": "Apple's net sales and operating expenses both rose 8% in fiscal 2023.",
+          "entailment_label": "supported",
+          "confidence": 0.95
+        }
+      ],
+      "correct_verdict": "fabricated",
+      "note": "Synthetic (not from a real run) -- constructed specifically to exercise the fabricated bucket: the cited topic (OpenAI joint venture) has no corresponding entry anywhere in all_debate_claims, so match_to_real_claim should find nothing above MATCH_THRESHOLD. No real memo has produced this yet, but the pipeline needs at least one labeled fabricated case to be a meaningful test set."
+    },
+    {
+      "id": "synthetic-008-ambiguous",
+      "memo_sentence": "Bear's claim that margin declined due to rising component costs was flagged as unsupported.",
+      "all_debate_claims": [
+        {
+          "claim_id": "bear-701",
+          "agent": "bear",
+          "text": "Apple's gross margin declined due to rising component costs in fiscal 2025.",
+          "entailment_label": "not_enough_evidence",
+          "confidence": 0.7
+        },
+        {
+          "claim_id": "bear-702",
+          "agent": "bear",
+          "text": "Apple's operating margin declined due to rising component costs in fiscal 2025.",
+          "entailment_label": "contradicted",
+          "confidence": 0.65
+        }
+      ],
+      "correct_verdict": "ambiguous",
+      "note": "Synthetic, and specifically re-tuned against a real embedding check (not left as an untested guess): near-duplicate wording (gross vs. operating margin) confirmed via a direct match_to_real_claim() call to land within AMBIGUITY_MARGIN regardless of exact topic phrasing (measured similarity 0.77 to the top candidate, second candidate within the margin). Deliberately uses two DIFFERENT entailment labels (not_enough_evidence vs. contradicted) so the ambiguity is verdict-relevant, not just identity-relevant like aapl-run2-003/aapl-run3-004 above (where the two candidates happened to share the same 'unsupported'-equivalent status) -- this is the case where picking the wrong one of two near-identical candidates would actually change the accuracy answer, the sharpest version of why the ambiguous bucket exists at all."
+    }
+  ]
+}

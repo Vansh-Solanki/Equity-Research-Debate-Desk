@@ -19,6 +19,7 @@ from rag.embedder import embed_query
 from rag.reranker import rerank
 
 SNIPPET_WORDS = 20
+SAMPLE_OFFSET_CHARS = 100
 
 
 def _looks_distinctive(snippet: str) -> bool:
@@ -48,7 +49,15 @@ def sample_test_questions(company: str, n: int) -> list[dict]:
     for b in range(n):
         bucket = usable[b * bucket_size : (b + 1) * bucket_size] or [usable[-1]]
         for chunk_id, text in bucket:
-            words = re.split(r"\s+", text[100:].strip())
+            # Real bug (found only after rag/chunker.py's sentence-safe rework made
+            # chunk-boundary word-splitting itself a non-issue): a raw text[100:]
+            # slice cuts at a fixed character offset with no word-boundary snap, so
+            # the sampled "question" itself could start mid-word regardless of how
+            # clean the underlying chunk's own boundaries are. Snap forward to the
+            # next whitespace after the offset instead of cutting blind.
+            space = text.find(" ", SAMPLE_OFFSET_CHARS)
+            sample_start = space + 1 if space != -1 else SAMPLE_OFFSET_CHARS
+            words = re.split(r"\s+", text[sample_start:].strip())
             snippet = " ".join(words[:SNIPPET_WORDS])
             if _looks_distinctive(snippet):
                 questions.append({"query": snippet, "expected_chunk_id": chunk_id})

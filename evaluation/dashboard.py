@@ -31,12 +31,45 @@ logic (only debate engagement scoring is new, since nothing scored that before).
                                       result in, measuring whether the targeted
                                       deep dive actually raised measured
                                       groundedness for that debate.
+7. Verdict consistency (new, Sept 8 session, Layer 3 of the Judge-faithfulness
+                                      framework) -> evaluation.judge_faithfulness.
+                                      check_verdict_consistency, comparing the
+                                      Judge's stronger_side against each side's
+                                      actual measured support rate. Not one of
+                                      roadmap.md's original six — added after
+                                      the Sept 8 claim-extractor fix (see
+                                      evaluation/claim_extractor.py's docstring)
+                                      exposed that metric 1's "judge" entry can
+                                      go empty on a well-behaved memo, which
+                                      means groundedness alone can't confirm the
+                                      Judge's final call is trustworthy.
+8. Citation accuracy (new, Sept 8 session, Layer 2 of the same framework) ->
+                                      evaluation.judge_faithfulness.check_citations,
+                                      checking whether the Judge's memo
+                                      accurately describes what each side
+                                      actually said and its real verification
+                                      status, against all_debate_claims (not
+                                      the filing). Deliberately kept separate
+                                      from both groundedness (Layer 1: new
+                                      stated facts) and verdict consistency
+                                      (Layer 3: the final conclusion) — this
+                                      one checks the memo's prose about the
+                                      debate itself.
+
+Layers 2 and 3 are dashboard-only, not wired into orchestration/debate_loop.py's
+live run — same reasoning judge_accuracy already follows (measured against a
+separate hand-labeled set, not computed inline during every debate): each
+citation check costs one extra Groq call per detected citation sentence, and
+adding that to the live per-debate rate-limit budget (already tight — see
+progress.md's Phase 3/4 write-ups) isn't worth it for a metric meant to be
+read after the fact, not acted on mid-debate.
 """
 
 import json
 
 from deep_dive.spawner import spawn_deep_dive
 from evaluation.engagement_scorer import compute_engagement_score
+from evaluation.judge_faithfulness import check_citations, check_verdict_consistency
 from evaluation.metrics import groundedness_pct, score_predictions
 from evaluation.pipeline import check_claim
 from evaluation.retrieval_metrics import recall_at_k
@@ -45,14 +78,34 @@ from rag.retriever import index_company_filing
 DEFAULT_TEST_SET_PATH = "evaluation/test_set.json"
 
 
-def compute_groundedness_by_agent(claim_details: dict) -> dict[str, float]:
+EXPECTED_AGENTS = ("bull", "bear", "judge")
+
+
+def compute_groundedness_by_agent(
+    claim_details: dict, expected_agents: tuple[str, ...] = EXPECTED_AGENTS
+) -> dict[str, float | None]:
     """Splits a DebateResult's claim_details ({claim_id: Claim}) by claim["agent"]
     and runs groundedness_pct over each group — "bull"/"bear"/"judge" from a normal
-    debate, plus "deep_dive_sub_agent" if any deep-dive results were merged in."""
+    debate, plus "deep_dive_sub_agent" if any deep-dive results were merged in.
+
+    Every name in `expected_agents` is always a key in the result, even if that
+    agent contributed zero checkable claims — value is None in that case, not a
+    missing key. Found necessary after the Sept 8 claim-extractor fix (skips
+    debate-commentary sentences, see evaluation/claim_extractor.py): a Judge memo
+    that's entirely commentary on already-checked claims (exactly what it's now
+    designed to write) legitimately produces zero extractable claims, and a
+    silently-missing "judge" key read as a bug/crash rather than the expected
+    "nothing new to check" outcome. None is deliberately distinct from 0.0 — 0.0
+    would mean "checked N>0 claims, none supported" (a real hallucination
+    signal), not "checked nothing."
+    """
     by_agent: dict[str, list[dict]] = {}
     for claim in claim_details.values():
         by_agent.setdefault(claim["agent"], []).append(claim)
-    return {agent: groundedness_pct(claims) for agent, claims in by_agent.items()}
+    result = {agent: groundedness_pct(claims) for agent, claims in by_agent.items()}
+    for agent in expected_agents:
+        result.setdefault(agent, None)
+    return result
 
 
 def compute_judge_accuracy(test_set_path: str = DEFAULT_TEST_SET_PATH) -> dict:
@@ -149,6 +202,7 @@ def assemble_dashboard(
     when the caller hasn't run a deep dive for this debate, since there's nothing
     to measure lift against yet.
     """
+    bull_bear_claims = [c for c in debate_result["claim_details"].values() if c["agent"] in ("bull", "bear")]
     dashboard = {
         "groundedness_by_agent": compute_groundedness_by_agent(debate_result["claim_details"]),
         "judge_accuracy": compute_judge_accuracy(),
@@ -156,6 +210,20 @@ def assemble_dashboard(
         "retrieval_recall": compute_retrieval_recall(company),
         "latency": summarize_latency(elapsed_seconds, call_log),
         "deep_dive_lift": None,
+        # Layer 3 of the Sept 8 Judge-faithfulness framework (see
+        # evaluation/judge_faithfulness.py): does stronger_side actually follow
+        # from the same claim data the Judge was handed before writing its
+        # memo? Separate from groundedness_by_agent's "judge" entry (Layer 1,
+        # which checks new facts the Judge stated) — this checks the Judge's
+        # final conclusion instead, so it's its own dashboard key, not blended in.
+        "verdict_consistency": check_verdict_consistency(
+            debate_result["judge_verdict"]["stronger_side"], bull_bear_claims
+        ),
+        # Layer 2: does the Judge's memo prose accurately describe what each
+        # side actually said (per all_debate_claims), not just whether the
+        # memo's own new factual claims are true (Layer 1) or whether its
+        # final verdict follows from the evidence (Layer 3).
+        "citation_accuracy": check_citations(debate_result["judge_verdict"]["memo"], bull_bear_claims).as_dict(),
     }
     if deep_dive_section is not None:
         dashboard["deep_dive_lift"] = compute_deep_dive_lift(debate_result, company, deep_dive_section)

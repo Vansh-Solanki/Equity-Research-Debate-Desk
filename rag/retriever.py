@@ -26,10 +26,11 @@ def index_company_filing(company: str, filing_type: str = "10-K") -> dict:
     if not records:
         return {"success": False, "chunks_indexed": 0, "error": "filing produced no chunks"}
 
-    # Clear any prior index for this filing first — chunk ids are deterministic, so
-    # upsert alone handles a same-length re-index, but a shorter re-index (e.g. after
-    # a text-cleaning fix) would otherwise leave old trailing chunks orphaned.
-    delete_filing_chunks(company, filing_type)
+    # Clear every section of any prior index for this filing first (section=None) —
+    # chunk_filing now section-splits internally, so a re-index's section labels and
+    # chunk counts can differ run to run (e.g. after a chunker/splitter fix); old
+    # labels have no fixed correspondence to new ones for a scoped delete to target.
+    delete_filing_chunks(company, filing_type, section=None)
     embeddings = embed_texts([r["text"] for r in records])
     count = upsert_chunks(company, records, embeddings)
     return {"success": True, "chunks_indexed": count, "error": None}

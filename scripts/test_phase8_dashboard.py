@@ -56,7 +56,10 @@ def main() -> int:
 
     print("=== 1. Groundedness % per agent ===")
     for agent, pct in dashboard["groundedness_by_agent"].items():
-        print(f"  {agent}: {pct:.0%}")
+        if pct is None:
+            print(f"  {agent}: N/A (no new factual claims — statement was entirely debate commentary or empty)")
+        else:
+            print(f"  {agent}: {pct:.0%}")
 
     print("\n=== 2. Judge accuracy (entailment pipeline F1 vs hand-labeled test set) ===")
     ja = dashboard["judge_accuracy"]
@@ -87,8 +90,33 @@ def main() -> int:
             f"  groundedness before={lift['groundedness_before']:.0%} "
             f"after={lift['groundedness_after']:.0%} lift={lift['lift']:+.0%}"
         )
+    print("\n=== 7. Verdict consistency (Judge-faithfulness Layer 3) ===")
+    vc = dashboard["verdict_consistency"]
+    if vc["evidence_favors"] is None:
+        print(f"  {vc['reason']}")
+    else:
+        print(
+            f"  judge_said={vc['judge_said']} evidence_favors={vc['evidence_favors']} "
+            f"(bull={vc['bull_support_rate']:.0%} n={vc['bull_claim_count']}, "
+            f"bear={vc['bear_support_rate']:.0%} n={vc['bear_claim_count']}, gap={vc['gap']:.0%})"
+        )
+        print(f"  consistent={vc['consistent']} — {vc['reason']}")
 
-    print("\nPASSED: all six dashboard metrics computed for one full debate run.")
+    print("\n=== 8. Citation accuracy (Judge-faithfulness Layer 2) ===")
+    ca = dashboard["citation_accuracy"]
+    if ca["accuracy_pct"] == "N/A (no citations to check)":
+        print(f"  {ca['accuracy_pct']}")
+    else:
+        print(
+            f"  accuracy={ca['accuracy_pct']:.1f}% over {ca['total_citations']} citation(s) — "
+            f"accurate={ca['accurate']} wrong_status={ca['wrong_status']} "
+            f"fabricated={ca['fabricated']} ambiguous={ca['ambiguous']}"
+        )
+
+    print("\n=== Judge memo (verification) ===")
+    print(result["judge_verdict"]["memo"])
+
+    print("\nPASSED: all eight dashboard metrics computed for one full debate run.")
     return 0
 
 

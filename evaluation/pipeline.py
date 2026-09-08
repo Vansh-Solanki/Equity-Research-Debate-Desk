@@ -37,6 +37,24 @@ local, un-fine-tuned NLI model checking free-form claims against noisy,
 table-heavy 10-K prose has a real accuracy ceiling. See progress.md's Phase 6
 write-up for the full tuning history and the adjusted, still meaningful bar
 scripts/test_phase6_evaluation.py checks against.
+
+Re-tuned after rag/chunker.py's structure-aware + sentence-safe chunking
+rework (see progress.md's Phase 5 write-up): cleaner, section-scoped chunks
+made a wider retrieval pool pay off where it previously didn't.
+DEFAULT_TOP_K = 3 (untried in the original sweep above, which only tested up
+to 2 before separately confirming 5 backfired on noisier chunks) now measures
+F1 = 0.72, reproduced identically across repeated runs.
+
+_select_relevant_span's pure embedding-similarity ranking can't tell apart two
+spans about similarly-worded but distinct things (e.g. "Commercial" vs.
+"Consumer" cloud stats in the same MSFT chunk) — KEYWORD_BOOST adds a small,
+additive nudge toward spans containing one of the claim's own distinctive
+words, verified to work correctly with zero F1 regression (see progress.md's
+"Known issues" for the full verification). It doesn't fully fix every such
+case on its own — a separate, still-open bug in bulleted-list span splitting
+can still dilute the premise even once the right span is selected; see the
+same progress.md entry for why a fix for that specific bug was tried and
+reverted (it regressed F1 elsewhere).
 """
 
 import re
@@ -48,7 +66,7 @@ from evaluation.entailment_checker import NOT_ENOUGH_EVIDENCE, classify_entailme
 from rag.embedder import embed_query, embed_texts
 from rag.retriever import retrieve
 
-DEFAULT_TOP_K = 2
+DEFAULT_TOP_K = 3
 DEFAULT_CANDIDATE_K = 15
 
 # Below this confidence, a candidate's supported/contradicted verdict isn't
@@ -65,17 +83,63 @@ TOP_RANK_BONUS = 0.1
 
 _SPAN_SPLIT_RE = re.compile(r"(?<=[.?!])\s+(?=[A-Z0-9$])")
 
+# How many spans on each side of the best-matching one to include in the NLI
+# premise. Tried widening to 2 (hoping multi-part claims would more often have
+# both referenced facts in view together) — measured F1 dropped 0.72 -> 0.67 on
+# evaluation/test_set.json, same shape as DEFAULT_TOP_K=5 backfiring above: the
+# extra neighboring span pulls in conflicting signal more often than it
+# resolves a genuinely split claim (contradicted precision 1.00 -> 0.80,
+# not_enough_evidence recall 1.00 -> 0.83). Reverted to 1.
+SPAN_NEIGHBORS = 1
+
+# _select_relevant_span's embedding similarity alone can't distinguish two
+# spans about similarly-worded but distinct things (e.g. "Microsoft 365
+# Commercial" vs "Microsoft 365 Consumer" cloud stats sitting a sentence apart
+# in the same chunk) — confirmed on msft-03/msft-06's second half after Phase
+# 6's claim-extraction multi-fact-split fix, both of which picked the wrong
+# span despite the right one being retrieved. KEYWORD_BOOST is an additive
+# nudge (not a replacement stage) added to any span containing one of the
+# claim's own distinctive words before ranking — see _select_relevant_span.
+# Comparable in scale to check_claim's own TOP_RANK_BONUS tie-break: enough to
+# flip a near-tie toward the span actually about the right thing, not enough
+# to override a genuinely large similarity gap in the wrong direction.
+KEYWORD_BOOST = 0.1
+
+_WORD_RE = re.compile(r"[A-Za-z][A-Za-z']*")
+
 
 def _split_spans(text: str) -> list[str]:
     return [s.strip() for s in _SPAN_SPLIT_RE.split(text) if len(s.strip()) > 15]
 
 
+def _distinctive_keywords(claim: str) -> list[str]:
+    """Extracts a claim's distinctive (likely topic-identifying) words for
+    _select_relevant_span's keyword boost — same "capitalized, not just because
+    it's the sentence start" spirit as evaluation/retrieval_metrics.py's
+    _looks_distinctive, which is why the first word is skipped (its
+    capitalization is a sentence-start artifact, not a real signal)."""
+    words = claim.split()
+    keywords = []
+    for w in words[1:]:
+        match = _WORD_RE.match(w)
+        if match and len(match.group()) > 2 and match.group()[0].isupper():
+            keywords.append(match.group())
+    return keywords
+
+
 def _select_relevant_span(claim: str, evidence: str) -> str:
     """Picks the single span (sentence-like unit, or one un-split table block)
     in `evidence` most similar to `claim` by embedding cosine similarity, plus
-    one neighboring span each side for continuity — a much smaller, cleaner NLI
-    premise than the full raw chunk. Returns `evidence` unchanged if it doesn't
-    split into more than one span (nothing to narrow down)."""
+    SPAN_NEIGHBORS neighboring spans each side for continuity — a much smaller,
+    cleaner NLI premise than the full raw chunk. Returns `evidence` unchanged if
+    it doesn't split into more than one span (nothing to narrow down).
+
+    Before picking the best-matching span, any span containing one of the
+    claim's own distinctive keywords gets a small additive KEYWORD_BOOST — see
+    that constant's comment for why this is an additive nudge, not a fallback
+    stage, and why it's lower-risk than widening SPAN_NEIGHBORS was. Claims with
+    no distinctive keyword (most of them) are entirely unaffected.
+    """
     spans = _split_spans(evidence)
     if len(spans) <= 1:
         return evidence
@@ -83,10 +147,17 @@ def _select_relevant_span(claim: str, evidence: str) -> str:
     claim_embedding = np.array(embed_query(claim))
     span_embeddings = np.array(embed_texts(spans))
     norms = np.linalg.norm(span_embeddings, axis=1) * np.linalg.norm(claim_embedding) + 1e-9
-    similarities = span_embeddings @ claim_embedding / norms
+    scores = span_embeddings @ claim_embedding / norms
 
-    best_idx = int(similarities.argmax())
-    lo, hi = max(0, best_idx - 1), min(len(spans), best_idx + 2)
+    keywords = _distinctive_keywords(claim)
+    if keywords:
+        scores = scores.copy()
+        for i, span in enumerate(spans):
+            if any(keyword in span for keyword in keywords):
+                scores[i] += KEYWORD_BOOST
+
+    best_idx = int(scores.argmax())
+    lo, hi = max(0, best_idx - SPAN_NEIGHBORS), min(len(spans), best_idx + SPAN_NEIGHBORS + 1)
     return " ".join(spans[lo:hi])
 
 

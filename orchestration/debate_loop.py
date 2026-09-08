@@ -99,7 +99,22 @@ def run_debate_stream(company: str, rounds: int = 3):
             yield {"type": "statement", "entry": entry}
 
     time.sleep(INTER_TURN_PAUSE_SECONDS)
-    judge_verdict = judge_agent.run_verdict(company, _format_transcript(transcript))
+
+    # Every Bull/Bear claim has already been checked (via _entry()'s check_statement
+    # call, above) by the time we get here — compute this before run_verdict() and
+    # hand it to the Judge, instead of only using it to overwrite the Judge's
+    # self-reported numbers after the fact. The Judge previously wrote its memo
+    # blind to this data, which could describe a different picture of the debate
+    # than the programmatically-measured counts did.
+    all_debate_claims = [claim_details[cid] for entry in transcript for cid in entry["claims"]]
+    unsupported_claims = [c for c in all_debate_claims if c["entailment_label"] != "supported"]
+
+    judge_verdict = judge_agent.run_verdict(
+        company,
+        _format_transcript(transcript),
+        all_debate_claims=all_debate_claims,
+        unsupported_claims=unsupported_claims,
+    )
 
     # Fact-check the Judge's own memo too — "no agent is exempt or self-certifying"
     # applies to the Judge as much as to Bull/Bear.
@@ -107,15 +122,12 @@ def run_debate_stream(company: str, rounds: int = 3):
     for claim in judge_claims:
         claim_details[claim["claim_id"]] = claim
 
-    # Replace the Judge's self-reported claims_checked/claims_unsupported (Phase 4:
-    # its own subjective read of the transcript) with counts measured by the shared
-    # pipeline over every Bull/Bear claim in the debate — a real measurement instead
-    # of the Judge grading its own homework.
-    all_debate_claims = [claim_details[cid] for entry in transcript for cid in entry["claims"]]
+    # Still not trusted from the LLM — claims_checked/claims_unsupported are set
+    # programmatically from the same measured data the Judge was just given, so the
+    # memo's prose and these counts now describe the same underlying reality instead
+    # of just happening to agree by coincidence.
     judge_verdict["claims_checked"] = len(all_debate_claims)
-    judge_verdict["claims_unsupported"] = sum(
-        1 for c in all_debate_claims if c["entailment_label"] != "supported"
-    )
+    judge_verdict["claims_unsupported"] = len(unsupported_claims)
     yield {"type": "verdict", "judge_verdict": judge_verdict}
 
     yield {
