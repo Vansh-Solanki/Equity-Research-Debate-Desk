@@ -2,7 +2,14 @@
 
 from functools import lru_cache
 
+from huggingface_hub.utils import logging as hf_logging
 from sentence_transformers import SentenceTransformer
+
+# Downloading all-MiniLM-L6-v2 hits the HF Hub anonymously (no token needed for a
+# public model), which makes the Hub respond with an X-HF-Warning nudging you to
+# log in — harmless and not actionable here, so silence huggingface_hub's own
+# logger rather than leaving it to print on every fresh cache / first run.
+hf_logging.set_verbosity_error()
 
 MODEL_NAME = "all-MiniLM-L6-v2"
 

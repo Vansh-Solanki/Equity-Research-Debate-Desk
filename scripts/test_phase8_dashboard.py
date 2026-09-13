@@ -23,12 +23,13 @@ import agents.llm as llm
 from deep_dive.spawner import get_available_sections
 from evaluation.dashboard import assemble_dashboard
 from orchestration.debate_loop import run_debate
+from utils.console import fix_windows_console
 
 DEFAULT_COMPANY = "AAPL"
 
 
 def main() -> int:
-    sys.stdout.reconfigure(encoding="utf-8")
+    fix_windows_console()
     load_dotenv()
 
     company = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_COMPANY

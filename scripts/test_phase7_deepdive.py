@@ -17,6 +17,7 @@ import time
 from dotenv import load_dotenv
 
 from deep_dive.spawner import get_available_sections, spawn_deep_dive
+from utils.console import fix_windows_console
 
 DEFAULT_COMPANY = "AAPL"
 MIN_SECTIONS = 3
@@ -28,7 +29,7 @@ MAX_CACHED_SECONDS = 2.0
 
 
 def main() -> int:
-    sys.stdout.reconfigure(encoding="utf-8")
+    fix_windows_console()
     load_dotenv()
 
     company = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_COMPANY

@@ -4,11 +4,19 @@ Per-company collections (not one big collection with a company filter) keep each
 company's chunks physically separate, which is enough isolation for Phase 5's
 single-user testing. Phase 10's orchestration/session.py adds per-debate-session
 isolation on top of this once concurrent users are a real concern.
+
+chroma_data is a plain on-disk store (no built-in multi-writer protection), so
+two processes re-indexing the same (company, filing_type) at once — e.g. the
+Streamlit app mid-debate and a test script run from another terminal — could
+interleave their delete/upsert calls. index_lock() is a cross-process file lock
+callers use to serialize a re-index's delete+upsert critical section.
 """
 
+import contextlib
 import os
 
 import chromadb
+from filelock import FileLock
 
 _client: chromadb.ClientAPI | None = None
 
@@ -30,6 +38,23 @@ def _collection_name(company: str) -> str:
 
 def get_or_create_collection(company: str):
     return _get_client().get_or_create_collection(name=_collection_name(company))
+
+
+def _persist_dir() -> str:
+    return os.getenv("CHROMA_PERSIST_DIR", "./chroma_data")
+
+
+@contextlib.contextmanager
+def index_lock(company: str, filing_type: str):
+    """Cross-process lock guarding a re-index's delete+upsert critical section for
+    one (company, filing_type) — see this module's docstring. A second process
+    (or thread) requesting the same lock blocks until the first releases it,
+    rather than interleaving writes to the same on-disk collection."""
+    persist_dir = _persist_dir()
+    os.makedirs(persist_dir, exist_ok=True)
+    lock_path = os.path.join(persist_dir, f".lock_{_collection_name(company)}_{filing_type}")
+    with FileLock(lock_path):
+        yield
 
 
 def delete_filing_chunks(company: str, filing_type: str, section: str | None = "") -> None:

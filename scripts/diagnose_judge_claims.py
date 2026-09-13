@@ -18,6 +18,7 @@ import sys
 from dotenv import load_dotenv
 
 from evaluation.claim_extractor import extract_claims
+from utils.console import fix_windows_console
 
 # The exact memo text from the AAPL test_phase8_dashboard run you posted.
 EXAMPLE_MEMO = (
@@ -30,7 +31,7 @@ EXAMPLE_MEMO = (
 
 
 def main() -> int:
-    sys.stdout.reconfigure(encoding="utf-8")
+    fix_windows_console()
     load_dotenv()
 
     memo = sys.argv[1] if len(sys.argv) > 1 else EXAMPLE_MEMO

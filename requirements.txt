@@ -1,13 +1,14 @@
 groq
-crewai
+crewai==1.15.18
 litellm
 python-dotenv
-mcp
+mcp==1.28.1
 requests
 yfinance
 feedparser
 beautifulsoup4
 lxml
 chromadb
+filelock
 sentence-transformers
 streamlit

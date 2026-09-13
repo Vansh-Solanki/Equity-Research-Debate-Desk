@@ -3,7 +3,7 @@ index_company_filing() to populate the store, retrieve() to query it.
 """
 
 from mcp_server.tools import get_filing as _get_filing
-from rag.chroma_store import delete_filing_chunks, query_collection, upsert_chunks
+from rag.chroma_store import delete_filing_chunks, index_lock, query_collection, upsert_chunks
 from rag.chunker import chunk_filing
 from rag.embedder import embed_query, embed_texts
 from rag.reranker import rerank
@@ -26,13 +26,19 @@ def index_company_filing(company: str, filing_type: str = "10-K") -> dict:
     if not records:
         return {"success": False, "chunks_indexed": 0, "error": "filing produced no chunks"}
 
-    # Clear every section of any prior index for this filing first (section=None) —
-    # chunk_filing now section-splits internally, so a re-index's section labels and
-    # chunk counts can differ run to run (e.g. after a chunker/splitter fix); old
-    # labels have no fixed correspondence to new ones for a scoped delete to target.
-    delete_filing_chunks(company, filing_type, section=None)
+    # Embed (slow — runs a local model) before touching the store at all: if this
+    # process crashes or is interrupted mid-embed, the old index is untouched and
+    # still usable. Only the delete+upsert pair below is the actual crash window,
+    # and index_lock keeps a second process from interleaving its own delete/upsert
+    # into that same window.
     embeddings = embed_texts([r["text"] for r in records])
-    count = upsert_chunks(company, records, embeddings)
+    with index_lock(company, filing_type):
+        # Clear every section of any prior index for this filing first (section=None) —
+        # chunk_filing now section-splits internally, so a re-index's section labels and
+        # chunk counts can differ run to run (e.g. after a chunker/splitter fix); old
+        # labels have no fixed correspondence to new ones for a scoped delete to target.
+        delete_filing_chunks(company, filing_type, section=None)
+        count = upsert_chunks(company, records, embeddings)
     return {"success": True, "chunks_indexed": count, "error": None}
 
 

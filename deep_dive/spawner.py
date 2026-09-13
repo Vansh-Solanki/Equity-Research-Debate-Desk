@@ -58,9 +58,8 @@ def _build_sub_agent(company: str, section: str) -> Agent:
             f"appear in the retrieved excerpts you are given — never state a fact you were "
             f"not given."
         ),
-        # Tools stay attached even though this task's instructions say not to call
-        # them — see agents/bull_agent.py's build_bull_agent docstring: a
-        # zero-tools agent can still trigger a Groq 400 on a hallucinated tool call.
+        # Tools stay attached (avoids a Groq zero-tools crash) but are inert decoys
+        # that never fetch real data — see agents/tools.py's module docstring.
         tools=ALL_TOOLS,
         llm=build_groq_llm(temperature=0.3, max_completion_tokens=512),
         max_iter=2,

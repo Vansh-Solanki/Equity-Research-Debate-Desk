@@ -36,12 +36,27 @@ speaking_order = [bull_agent, bear_agent]
 # to agents.llm.run_with_rate_limit_backoff's (much longer) retry wait.
 INTER_TURN_PAUSE_SECONDS = 15
 
+# _entry() calls check_statement() (which fires its own separate Groq call via
+# evaluation.claim_extractor.extract_claims) immediately after an agent's
+# statement call returns — with no gap, that's two back-to-back Groq calls per
+# turn, and only the *next* turn benefits from INTER_TURN_PAUSE_SECONDS. A real
+# 3-round debate makes 7 statement calls, so this doubles to 14 total Groq
+# calls without any of that doubling being spaced out — a real contributor to
+# reliably brushing the free tier's per-minute cap (see progress.md's Known
+# issues). This pause specifically covers that one gap; it's shorter than
+# INTER_TURN_PAUSE_SECONDS since it only needs to avoid firing two calls in the
+# same instant, not fully separate two independent turns.
+CLAIM_CHECK_PAUSE_SECONDS = 3
+
 
 def _format_transcript(transcript: list[dict]) -> str:
     return "\n".join(f"[Round {entry['round']}] {entry['agent'].upper()}: {entry['statement']}" for entry in transcript)
 
 
 def _entry(round_num: int, agent_module, statement: str, company: str, claim_details: dict) -> dict:
+    # Space this call away from the statement call it immediately follows — see
+    # CLAIM_CHECK_PAUSE_SECONDS's comment above.
+    time.sleep(CLAIM_CHECK_PAUSE_SECONDS)
     checked = check_statement(agent_module.AGENT_NAME, company, statement)
     for claim in checked:
         claim_details[claim["claim_id"]] = claim
@@ -54,7 +69,7 @@ def _entry(round_num: int, agent_module, statement: str, company: str, claim_det
     }
 
 
-def run_debate_stream(company: str, rounds: int = 3):
+def run_debate_stream(company: str, rounds: int = 3, on_wait=None):
     """Generator form of run_debate(): yields one event per step so a caller
     (frontend/app.py) can render the debate as it happens, rather than blocking
     until the whole thing finishes. Event shapes:
@@ -63,6 +78,14 @@ def run_debate_stream(company: str, rounds: int = 3):
     {"type": "statement", "entry": DebateTranscriptEntry}   -- once per turn
     {"type": "verdict", "judge_verdict": dict}
     {"type": "done", "result": DebateResult}                -- always the last event
+
+    `on_wait`, if given, is forwarded to every agent call
+    (agents.llm.run_with_rate_limit_backoff's own on_wait) so a caller can show
+    a live "waiting Ns for Groq's rate limit" status during a retry instead of
+    the UI just appearing frozen — see that function's docstring for the
+    callback signature. None (default) preserves the old silent-wait behavior,
+    so every existing caller (scripts/test_phase4/6/7/8_*.py) keeps working
+    unmodified.
 
     See run_debate()'s docstring for the debate structure itself; this function
     contains the actual logic, run_debate() just drains this generator.
@@ -85,7 +108,7 @@ def run_debate_stream(company: str, rounds: int = 3):
     for agent_module in speaking_order:
         if transcript:
             time.sleep(INTER_TURN_PAUSE_SECONDS)
-        statement = agent_module.run_opening_statement(company)
+        statement = agent_module.run_opening_statement(company, on_wait=on_wait)
         entry = _entry(1, agent_module, statement, company, claim_details)
         transcript.append(entry)
         yield {"type": "statement", "entry": entry}
@@ -93,7 +116,7 @@ def run_debate_stream(company: str, rounds: int = 3):
     for round_num in range(2, rounds + 1):
         for agent_module in speaking_order:
             time.sleep(INTER_TURN_PAUSE_SECONDS)
-            statement = agent_module.run_rebuttal(company, _format_transcript(transcript))
+            statement = agent_module.run_rebuttal(company, _format_transcript(transcript), on_wait=on_wait)
             entry = _entry(round_num, agent_module, statement, company, claim_details)
             transcript.append(entry)
             yield {"type": "statement", "entry": entry}
@@ -114,10 +137,14 @@ def run_debate_stream(company: str, rounds: int = 3):
         _format_transcript(transcript),
         all_debate_claims=all_debate_claims,
         unsupported_claims=unsupported_claims,
+        on_wait=on_wait,
     )
 
     # Fact-check the Judge's own memo too — "no agent is exempt or self-certifying"
-    # applies to the Judge as much as to Bull/Bear.
+    # applies to the Judge as much as to Bull/Bear. Same back-to-back-call gap as
+    # _entry()'s CLAIM_CHECK_PAUSE_SECONDS use — run_verdict() just made its own
+    # Groq call, so space this one away from it too.
+    time.sleep(CLAIM_CHECK_PAUSE_SECONDS)
     judge_claims = check_statement(judge_agent.AGENT_NAME, company, judge_verdict["memo"])
     for claim in judge_claims:
         claim_details[claim["claim_id"]] = claim
@@ -142,7 +169,7 @@ def run_debate_stream(company: str, rounds: int = 3):
     }
 
 
-def run_debate(company: str, rounds: int = 3) -> dict:
+def run_debate(company: str, rounds: int = 3, on_wait=None) -> dict:
     """Runs a full debate for `company` and returns a dict matching spec.md's
     DebateResult shape (deep_dive fields are left empty — Phase 7 populates those).
 
@@ -155,8 +182,10 @@ def run_debate(company: str, rounds: int = 3) -> dict:
     evaluation.pipeline.check_statement — the full Claim records end up in the
     returned dict's "claim_details" (keyed by claim_id; transcript entries and the
     judge_verdict only carry claim_id references, per spec.md's schemas).
+
+    `on_wait` — see run_debate_stream's docstring; forwarded unchanged.
     """
-    for event in run_debate_stream(company, rounds):
+    for event in run_debate_stream(company, rounds, on_wait=on_wait):
         if event["type"] == "done":
             return event["result"]
     raise AssertionError("unreachable — run_debate_stream always yields a done event")

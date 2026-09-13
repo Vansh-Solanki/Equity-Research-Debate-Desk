@@ -19,8 +19,15 @@ from pathlib import Path
 # otherwise fail to import.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from utils.console import fix_windows_console
+
+# Streamlit executes module-level code (including st.set_page_config below)
+# before main() ever runs, so this must happen here, not inside main().
+fix_windows_console()
+
 import streamlit as st
 from dotenv import load_dotenv
+from litellm.exceptions import RateLimitError
 
 from deep_dive.spawner import get_available_sections, spawn_deep_dive
 from orchestration.debate_loop import run_debate_stream
@@ -81,17 +88,34 @@ def main() -> None:
         st.session_state.company = company
 
         feed = st.container()
-        with st.spinner(f"Indexing {company}'s filing..."):
-            stream = run_debate_stream(company, rounds=DEFAULT_ROUNDS)
-            first_event = next(stream)
-        st.toast(f"Indexed {first_event['chunks_indexed']} chunks.")
+        status_placeholder = st.empty()
 
-        for event in stream:
-            if event["type"] == "statement":
-                with feed:
-                    _render_statement(event["entry"])
-            elif event["type"] == "done":
-                st.session_state.debate_result = event["result"]
+        def on_wait(remaining_seconds: float, reason: str) -> None:
+            status_placeholder.warning(
+                f"⏳ Groq's rate limit was hit during **{reason}** — "
+                f"waiting {remaining_seconds:.0f}s before retrying..."
+            )
+
+        try:
+            with st.spinner(f"Indexing {company}'s filing..."):
+                stream = run_debate_stream(company, rounds=DEFAULT_ROUNDS, on_wait=on_wait)
+                first_event = next(stream)
+            st.toast(f"Indexed {first_event['chunks_indexed']} chunks.")
+
+            for event in stream:
+                if event["type"] == "statement":
+                    status_placeholder.empty()
+                    with feed:
+                        _render_statement(event["entry"])
+                elif event["type"] == "done":
+                    st.session_state.debate_result = event["result"]
+        except (RuntimeError, RateLimitError):
+            st.error(
+                "Groq's rate limit was hit and retries were exhausted. Wait a bit "
+                "and try again, or check if you've hit the daily free-tier cap."
+            )
+        finally:
+            status_placeholder.empty()
 
     if "debate_result" in st.session_state and st.session_state.get("company") == company:
         result = st.session_state.debate_result

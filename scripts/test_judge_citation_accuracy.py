@@ -28,12 +28,13 @@ import sys
 from dotenv import load_dotenv
 
 from evaluation.judge_faithfulness import check_citations
+from utils.console import fix_windows_console
 
 TEST_SET_PATH = "evaluation/judge_citation_test_set.json"
 
 
 def main() -> int:
-    sys.stdout.reconfigure(encoding="utf-8")
+    fix_windows_console()
     load_dotenv()
 
     with open(TEST_SET_PATH, encoding="utf-8") as f:

@@ -12,6 +12,8 @@ import sys
 from dotenv import load_dotenv
 from groq import Groq
 
+from utils.console import fix_windows_console
+
 MODEL = "openai/gpt-oss-20b"
 
 RATE_LIMIT_HEADERS = [
@@ -25,6 +27,7 @@ RATE_LIMIT_HEADERS = [
 
 
 def main() -> int:
+    fix_windows_console()
     load_dotenv()
 
     api_key = os.getenv("GROQ_API_KEY")

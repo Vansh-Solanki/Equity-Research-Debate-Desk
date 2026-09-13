@@ -96,10 +96,8 @@ def build_judge_agent(company: str) -> Agent:
         role="Impartial equity research judge",
         goal=f"Fairly score the Bull vs Bear debate about {company} and flag weakly supported claims.",
         backstory=JUDGE_SYSTEM_PROMPT.format(company=company),
-        # Tools stay attached (see agents/bull_agent.py's build_bull_agent docstring
-        # note): Groq's `openai/gpt-oss-20b` can 400 on a hallucinated tool call when
-        # an agent has zero tools declared. The task instructs the Judge not to call
-        # them, since Phase 4's verdict is scored from the transcript alone.
+        # Tools stay attached (avoids a Groq zero-tools crash) but are inert decoys
+        # that never fetch real data — see agents/tools.py's module docstring.
         tools=ALL_TOOLS,
         # The verdict covers every claim across a multi-round transcript, so it needs
         # more completion headroom than a single opening statement — otherwise the
@@ -154,6 +152,7 @@ def run_verdict(
     transcript_text: str,
     all_debate_claims: list[dict],
     unsupported_claims: list[dict],
+    on_wait=None,
 ) -> dict:
     """Scores a finished debate transcript. Returns a dict matching spec.md's
     judge_verdict shape: {stronger_side, memo, claims_checked, claims_unsupported}.
@@ -162,6 +161,9 @@ def run_verdict(
     (evaluation.pipeline.check_statement's output) from this debate, already
     entailment-checked — see this module's docstring point 2 for why the Judge
     needs these, not just the raw retrieved excerpts.
+
+    `on_wait` — see agents.llm.run_with_rate_limit_backoff's docstring; forwarded
+    unchanged so a UI caller can show a live rate-limit-wait status.
     """
     agent = build_judge_agent(company)
     context = _build_retrieved_context(company, JUDGE_EVIDENCE_QUERIES)
@@ -215,5 +217,5 @@ def run_verdict(
         agent=agent,
     )
     crew = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False)
-    raw = str(run_with_rate_limit_backoff(crew.kickoff, label="judge_verdict"))
+    raw = str(run_with_rate_limit_backoff(crew.kickoff, label="judge_verdict", on_wait=on_wait))
     return _parse_verdict(raw)

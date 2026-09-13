@@ -59,7 +59,7 @@ fix.
 import re
 
 from mcp_server.tools import get_filing as _get_filing
-from rag.chroma_store import delete_filing_chunks, get_or_create_collection, upsert_chunks
+from rag.chroma_store import delete_filing_chunks, get_or_create_collection, index_lock, upsert_chunks
 from rag.chunker import chunk_filing
 from rag.embedder import embed_texts
 
@@ -282,9 +282,14 @@ def index_filing_sections(company: str, filing_type: str = "10-K") -> dict:
         records = chunk_filing(section_filing_data, section=label)
         if not records:
             continue
-        delete_filing_chunks(company, filing_type, section=label)
+        # Embed before deleting anything — same crash-safety reasoning as
+        # rag.retriever.index_company_filing: embedding is the slow step, delete+
+        # upsert is the actual crash window, and index_lock keeps a second process
+        # from interleaving a write into that window.
         embeddings = embed_texts([r["text"] for r in records])
-        upsert_chunks(company, records, embeddings)
+        with index_lock(company, filing_type):
+            delete_filing_chunks(company, filing_type, section=label)
+            upsert_chunks(company, records, embeddings)
         labels.append(label)
 
     return {"success": True, "sections": labels, "error": None}

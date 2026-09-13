@@ -32,13 +32,14 @@ from dotenv import load_dotenv
 from evaluation.metrics import score_predictions
 from evaluation.pipeline import check_claim
 from rag.retriever import index_company_filing
+from utils.console import fix_windows_console
 
 TEST_SET_PATH = "evaluation/test_set.json"
 MIN_F1 = 0.65
 
 
 def main() -> int:
-    sys.stdout.reconfigure(encoding="utf-8")
+    fix_windows_console()
     load_dotenv()
 
     with open(TEST_SET_PATH, encoding="utf-8") as f:

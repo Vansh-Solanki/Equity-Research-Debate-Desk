@@ -34,6 +34,12 @@ def get_call_log() -> list[dict]:
 # API strictly rejects unknown message fields, so every call 400s without this.
 # Both crewai executors re-import mark_cache_breakpoint from this module on each
 # call, so patching the attribute here is enough to neutralize it everywhere.
+if not hasattr(_crewai_cache, "mark_cache_breakpoint"):
+    raise RuntimeError(
+        "crewai.llms.cache.mark_cache_breakpoint not found — this project's Groq-"
+        "compatibility patch (pinned to crewai==1.15.18) may need updating for "
+        "your installed crewai version."
+    )
 _crewai_cache.mark_cache_breakpoint = lambda message: dict(message)
 
 # Matches scripts/test_groq_setup.py — llama-3.1-8b-instant is no longer available
@@ -73,7 +79,7 @@ _RETRY_AFTER_RE = re.compile(r"try again in (?:(\d+)m)?([\d.]+)s")
 MAX_SENSIBLE_WAIT_SECONDS = 90.0
 
 
-def run_with_rate_limit_backoff(fn, max_attempts: int = 6, label: str = "unlabeled"):
+def run_with_rate_limit_backoff(fn, max_attempts: int = 6, label: str = "unlabeled", on_wait=None):
     """Run `fn()`, retrying with backoff on a few observed Groq/crewai flakes:
 
     - RateLimitError: Groq's free-tier rate limit (per-minute or per-day token cap).
@@ -93,7 +99,27 @@ def run_with_rate_limit_backoff(fn, max_attempts: int = 6, label: str = "unlabel
     `label` identifies the logical call site (e.g. "bull_opening", "judge_verdict")
     for Phase 8's evaluation.dashboard latency/call-count metric — recorded once per
     successful call, not per retry attempt.
+
+    `on_wait`, if given, is called roughly once per second during any wait this
+    function does (`on_wait(remaining_seconds, label)`), instead of the wait being
+    a single silent time.sleep(). This exists so a UI caller (frontend/app.py) can
+    show a live "waiting Ns for Groq's rate limit" status rather than the app just
+    appearing frozen for anywhere up to MAX_SENSIBLE_WAIT_SECONDS. None (default)
+    preserves the old silent-wait behavior exactly — every existing caller (the
+    agents/*.py functions, when called without on_wait) is unaffected.
     """
+
+    def _wait(wait_seconds: float, reason: str) -> None:
+        if on_wait is None:
+            time.sleep(wait_seconds)
+            return
+        remaining = wait_seconds
+        while remaining > 0:
+            step = min(1.0, remaining)
+            on_wait(remaining, reason)
+            time.sleep(step)
+            remaining -= step
+
     start = time.time()
     for attempt in range(max_attempts):
         try:
@@ -115,13 +141,13 @@ def run_with_rate_limit_backoff(fn, max_attempts: int = 6, label: str = "unlabel
                 ) from exc
             if attempt == max_attempts - 1:
                 raise
-            time.sleep(wait_seconds)
+            _wait(wait_seconds, label)
         except ValueError as exc:
             if attempt == max_attempts - 1 or "None or empty" not in str(exc):
                 raise
-            time.sleep(10.0)
+            _wait(10.0, label)
         except BadRequestError as exc:
             if attempt == max_attempts - 1 or "Tool choice is none" not in str(exc):
                 raise
-            time.sleep(5.0)
+            _wait(5.0, label)
     raise AssertionError("unreachable")

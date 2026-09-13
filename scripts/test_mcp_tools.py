@@ -10,6 +10,7 @@ import sys
 from dotenv import load_dotenv
 
 from mcp_server.tools import get_filing, get_news, get_price
+from utils.console import fix_windows_console
 
 TEST_COMPANIES = ["AAPL", "MSFT", "TSLA"]
 INVALID_COMPANY = "NOT_A_REAL_COMPANY_XYZ"
@@ -25,6 +26,7 @@ def check(label: str, result: dict, expect_success: bool) -> bool:
 
 
 def main() -> int:
+    fix_windows_console()
     load_dotenv()
     all_ok = True
 

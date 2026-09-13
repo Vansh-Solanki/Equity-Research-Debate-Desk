@@ -33,13 +33,14 @@ from dotenv import load_dotenv
 
 from evaluation.retrieval_metrics import sample_test_questions
 from rag.retriever import index_company_filing, retrieve
+from utils.console import fix_windows_console
 
 DEFAULT_COMPANY = "AAPL"
 NUM_TEST_QUESTIONS = 10
 
 
 def main() -> int:
-    sys.stdout.reconfigure(encoding="utf-8")
+    fix_windows_console()
     load_dotenv()
 
     company = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_COMPANY

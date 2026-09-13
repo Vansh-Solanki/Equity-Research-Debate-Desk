@@ -38,12 +38,8 @@ def build_bull_agent(company: str) -> Agent:
         role="Bull equity analyst",
         goal=f"Build the strongest, evidence-backed optimistic case for {company}.",
         backstory=BULL_SYSTEM_PROMPT.format(company=company),
-        # Tools stay attached even on turns that shouldn't call them (see run_rebuttal):
-        # Groq's `openai/gpt-oss-20b` will occasionally emit a hallucinated tool call
-        # (a phantom "browser.get_filing") when an agent has zero tools declared, and
-        # Groq's strict tool_choice="none" validation then 400s the whole request.
-        # Keeping real tools attached and instructing "don't call them" in the task
-        # avoids that path entirely.
+        # Tools stay attached (avoids a Groq zero-tools crash) but are inert decoys
+        # that never fetch real data — see agents/tools.py's module docstring.
         tools=ALL_TOOLS,
         llm=build_groq_llm(),
         # Kept tight for Groq's free-tier 8000 tokens/minute cap: 1 tool-call turn +
@@ -53,10 +49,13 @@ def build_bull_agent(company: str) -> Agent:
     )
 
 
-def run_opening_statement(company: str) -> str:
+def run_opening_statement(company: str, on_wait=None) -> str:
     """Runs the Bull agent's independent research and opening statement for `company`.
 
     Independent: takes no Bear transcript, so this cannot see or reference Bear's output.
+
+    `on_wait` — see agents.llm.run_with_rate_limit_backoff's docstring; forwarded
+    unchanged so a UI caller can show a live rate-limit-wait status.
     """
     agent = build_bull_agent(company)
     context = _build_retrieved_context(company, BULL_OPENING_QUERIES)
@@ -93,15 +92,17 @@ def run_opening_statement(company: str) -> str:
         agent=agent,
     )
     crew = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False)
-    return str(run_with_rate_limit_backoff(crew.kickoff, label="bull_opening"))
+    return str(run_with_rate_limit_backoff(crew.kickoff, label="bull_opening", on_wait=on_wait))
 
 
-def run_rebuttal(company: str, transcript_text: str) -> str:
+def run_rebuttal(company: str, transcript_text: str, on_wait=None) -> str:
     """Runs the Bull agent's next statement, reading the full transcript so far.
 
     Instructed not to call any tools: this round is about engaging with what's
     already on the record (its own prior facts and Bear's specific points), not
     fetching new evidence — also keeps token usage low for Groq's free-tier limit.
+
+    `on_wait` — see run_opening_statement's docstring.
     """
     agent = build_bull_agent(company)
     task = Task(
@@ -119,4 +120,4 @@ def run_rebuttal(company: str, transcript_text: str) -> str:
         agent=agent,
     )
     crew = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False)
-    return str(run_with_rate_limit_backoff(crew.kickoff, label="bull_rebuttal"))
+    return str(run_with_rate_limit_backoff(crew.kickoff, label="bull_rebuttal", on_wait=on_wait))
